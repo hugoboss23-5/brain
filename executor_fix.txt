@@ -1,0 +1,26 @@
+﻿# Add this to brain_server.py right after the EXECUTOR prompts
+
+# RESPONSE COMPRESSION RULE (add to all executor prompts)
+RESPONSE_RULES = '''
+CRITICAL OUTPUT RULES:
+- Maximum response: 3 sentences
+- Format: {what_i_did: str, files: list, status: str}
+- NO explanations unless explicitly asked
+- NO conversational fluff
+- Just facts and results
+'''
+
+# Update all executor prompts to include this
+EXECUTOR_MINIMAL = f'''You are Executor AI. Full brain access at C:\\Users\\bulli\\brain
+Create/edit files as instructed. Report what you did. Be brief.
+
+{RESPONSE_RULES}'''
+
+EXECUTOR_FILE_OPS = f'''Executor AI - File Operations Mode
+Brain: C:\\Users\\bulli\\brain (.venv active)
+Commands: create, edit, delete files
+Output: JSON with {{action, files, result}}
+
+{RESPONSE_RULES}'''
+
+# ... do this for all executor prompts
