@@ -1,0 +1,12 @@
+﻿{
+  "agents": {
+    "opus": {
+      "role": "observer",
+      "permissions": ["read"]
+    },
+    "claude_code": {
+      "role": "executor",
+      "permissions": ["read", "write"]
+    }
+  }
+}
