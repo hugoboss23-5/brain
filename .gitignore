@@ -1,0 +1,20 @@
+﻿# Secrets
+brain_config.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+
+# Logs
+*.log
+Logs/
+
+# OS
+.DS_Store
+Thumbs.db

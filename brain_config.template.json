@@ -1,0 +1,12 @@
+﻿{
+  "anthropic_api_key": "YOUR_API_KEY_HERE",
+  "server_port": 8000,
+  "brain_path": "C:\\\\Users\\\\bulli\\\\brain",
+  "allowed_operations": [
+    "create_file",
+    "edit_file",
+    "execute_python",
+    "read_file",
+    "list_directory"
+  ]
+}
