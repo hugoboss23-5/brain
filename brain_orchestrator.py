@@ -1,4 +1,4 @@
-﻿import anthropic
+import anthropic
 import json
 import requests
 from rich.console import Console
@@ -6,6 +6,8 @@ from rich.panel import Panel
 import time
 from datetime import datetime
 import os
+import hashlib
+import re
 
 console = Console()
 
@@ -37,15 +39,138 @@ class TokenTracker:
     def __init__(self):
         self.tokens_used = 0
         self.session_start = time.time()
-    
+
     def track(self, input_tokens, output_tokens):
         self.tokens_used += input_tokens + output_tokens
-    
+
     def get_stats(self):
         uptime = (time.time() - self.session_start) / 60
         return {'tokens_used': self.tokens_used, 'uptime_minutes': round(uptime, 1), 'estimated_cost': f'${self.tokens_used * 0.000015:.4f}'}
 
 tracker = TokenTracker()
+
+# =============================================================================
+# TOOL CALL GUARD - Prevents infinite loops
+# =============================================================================
+
+class ToolCallGuard:
+    """Prevents infinite tool call loops with deduplication, circuit breaker, and result caching"""
+
+    # Patterns that indicate conversational queries - should NOT use tools
+    CONVERSATIONAL_PATTERNS = [
+        r'\bexplain\b.*\bbrain\b',
+        r'\bwhat is brain\b',
+        r'\bwhat did we build\b',
+        r'\btell (him|her|them|chris|[a-z]+) about\b',
+        r'\bshow (him|her|them|chris|[a-z]+)\b',
+        r'\bdescribe\b.*\b(brain|system|project)\b',
+        r'\bintroduce\b.*\bbrain\b',
+        r'\bhow does brain work\b',
+        r'\bwhat can (you|brain|opus) do\b',
+        r'\bwho are you\b',
+        r'\bexplain yourself\b',
+        r'\bwhat are you\b',
+    ]
+
+    def __init__(self, max_total_calls=15, max_consecutive_same=3, max_recent_signatures=5):
+        self.max_total_calls = max_total_calls
+        self.max_consecutive_same = max_consecutive_same
+        self.max_recent_signatures = max_recent_signatures
+        self.reset()
+
+    def reset(self):
+        """Reset for new user message"""
+        self.total_calls = 0
+        self.recent_signatures = []  # Last N call signatures (tool_name + args hash)
+        self.result_hashes = {}      # tool_signature -> result_hash
+        self.consecutive_same_tool = 0
+        self.last_tool_name = None
+        self.blocked_reason = None
+
+    def _make_signature(self, tool_name, tool_input):
+        """Create unique signature for tool call"""
+        input_str = json.dumps(tool_input, sort_keys=True)
+        input_hash = hashlib.md5(input_str.encode()).hexdigest()[:8]
+        return f"{tool_name}:{input_hash}"
+
+    def _hash_result(self, result):
+        """Hash a tool result for comparison"""
+        result_str = json.dumps(result, sort_keys=True)
+        return hashlib.md5(result_str.encode()).hexdigest()
+
+    def is_conversational_query(self, user_message):
+        """Check if message should be answered conversationally without tools"""
+        msg_lower = user_message.lower()
+        for pattern in self.CONVERSATIONAL_PATTERNS:
+            if re.search(pattern, msg_lower):
+                console.print(f'[dim]   ℹ Detected conversational query - no tools needed[/dim]')
+                return True
+        return False
+
+    def should_allow_call(self, tool_name, tool_input):
+        """
+        Check if tool call should be allowed.
+        Returns: (allowed: bool, message: str or None)
+        """
+        signature = self._make_signature(tool_name, tool_input)
+
+        # Check 1: Total call limit
+        if self.total_calls >= self.max_total_calls:
+            self.blocked_reason = f"Hit {self.max_total_calls} tool call limit"
+            console.print(f'[yellow]   ⚠ CIRCUIT BREAKER: {self.blocked_reason}[/yellow]')
+            return False, f"I've hit my tool call limit ({self.max_total_calls} calls). Let me respond with what I have."
+
+        # Check 2: Duplicate call detection
+        if signature in self.recent_signatures:
+            self.blocked_reason = f"Duplicate call: {tool_name}"
+            console.print(f'[yellow]   ⚠ DUPLICATE: Already called {tool_name} with same args[/yellow]')
+            return False, "I already tried that exact call. Let me try something different."
+
+        # Check 3: Consecutive same tool limit
+        if tool_name == self.last_tool_name:
+            self.consecutive_same_tool += 1
+            if self.consecutive_same_tool >= self.max_consecutive_same:
+                self.blocked_reason = f"Called {tool_name} {self.max_consecutive_same}x consecutively"
+                console.print(f'[yellow]   ⚠ CIRCUIT BREAKER: {self.blocked_reason}[/yellow]')
+                return False, f"I've called {tool_name} {self.max_consecutive_same} times in a row. Let me use that information to respond."
+        else:
+            self.consecutive_same_tool = 1
+
+        return True, None
+
+    def record_call(self, tool_name, tool_input, result):
+        """Record a tool call after execution"""
+        signature = self._make_signature(tool_name, tool_input)
+        result_hash = self._hash_result(result)
+
+        # Track signature
+        self.recent_signatures.append(signature)
+        if len(self.recent_signatures) > self.max_recent_signatures:
+            self.recent_signatures.pop(0)
+
+        # Check for identical result to previous call of same tool
+        if signature in self.result_hashes:
+            if self.result_hashes[signature] == result_hash:
+                console.print(f'[yellow]   ⚠ Same result as before - tool output unchanged[/yellow]')
+
+        self.result_hashes[signature] = result_hash
+        self.total_calls += 1
+        self.last_tool_name = tool_name
+
+    def get_force_response_message(self):
+        """Get message to inject when forcing a response"""
+        return f"[SYSTEM: Tool limit reached - {self.blocked_reason}. Respond NOW with whatever information you have gathered. Do NOT request more tool calls.]"
+
+    def get_stats(self):
+        """Get guard statistics"""
+        return {
+            'total_calls': self.total_calls,
+            'unique_signatures': len(set(self.recent_signatures)),
+            'blocked_reason': self.blocked_reason
+        }
+
+# Global guard instance
+tool_guard = ToolCallGuard()
 
 # =============================================================================
 # TOOL FUNCTIONS - Direct server calls
@@ -56,9 +181,27 @@ def view_brain(operation, path=None):
     for attempt in range(3):
         try:
             r = requests.post(f'{brain_url}/view', json={'operation': operation, 'path': path}, timeout=30)
-            return r.json()
+            result = r.json()
+
+            # Enhanced logging for view_brain results
+            if 'error' not in result:
+                if operation == 'read_file':
+                    content_len = len(result.get('content', ''))
+                    console.print(f'[cyan]   ✓ view_brain: Read {path} ({content_len} chars)[/cyan]')
+                    if content_len > 0:
+                        # Show first 100 chars as preview
+                        preview = result.get('content', '')[:100].replace('\n', ' ')
+                        console.print(f'[dim]     Preview: {preview}...[/dim]')
+                elif operation == 'list_directory':
+                    items = result.get('items', result.get('files', []))
+                    console.print(f'[cyan]   ✓ view_brain: Listed {path or "root"} ({len(items)} items)[/cyan]')
+            else:
+                console.print(f'[red]   ✗ view_brain error: {result.get("error")}[/red]')
+
+            return result
         except Exception as e:
             if attempt == 2:
+                console.print(f'[red]   ✗ view_brain failed after 3 attempts: {e}[/red]')
                 return {'error': str(e)}
             time.sleep(1)
 
@@ -273,17 +416,59 @@ def dispatch_tool(name, inputs):
         return {'error': f'Unknown tool: {name}'}
 
 # =============================================================================
+# BRAIN IDENTITY - Core knowledge about what Brain is
+# =============================================================================
+
+BRAIN_IDENTITY = '''
+## WHO YOU ARE
+You are Opus inside Hugo's Brain system - a multi-model AI architecture.
+
+**Your Role: STRATEGIST** (thinking/planning/communicating)
+- You are Claude Opus, the commander and strategist
+- You think, plan, communicate with Hugo, and orchestrate the other models
+- You are the "brain" - you decide what to do and delegate execution
+
+**The Hierarchy:**
+- **OPUS (You)**: Strategist - planning, reasoning, conversation, orchestration
+- **CodeLlama (EAI)**: HANDS - executes code, creates/edits files, runs tasks
+- **DeepSeek R1**: THINKER - deep reasoning for complex problems
+- **TinyLlama x100**: SWARM - parallel processing via Pluribus consensus
+
+**CRITICAL RULE:**
+When someone asks you to "explain Brain" or "what is Brain" or "tell X about Brain":
+→ Do NOT search for files
+→ Do NOT use any tools
+→ Just TALK and explain conversationally from this knowledge
+→ You ARE Brain. You know what you are. Just explain it.
+
+**Tool Limits:**
+- Max 15 tool calls per response
+- If you hit the limit, STOP and respond with what you have
+- Never call the same tool with the same arguments twice
+- Never call the same tool more than 3 times in a row
+'''
+
+# =============================================================================
 # SYSTEM PROMPT
 # =============================================================================
 
-def get_system_prompt():
+def get_system_prompt(force_conversational=False):
     mem_context = ""
     if convo_memory.get("key_facts"):
         mem_context = "\n\nREMEMBERED FACTS:\n" + "\n".join(f"- {f}" for f in convo_memory["key_facts"][-10:])
     if convo_memory.get("ongoing_projects"):
         mem_context += "\n\nONGOING PROJECTS:\n" + "\n".join(f"- {p}" for p in convo_memory["ongoing_projects"][-5:])
-    
-    return f'''You are Opus, Commander of the Brain.
+
+    conversational_override = ""
+    if force_conversational:
+        conversational_override = """
+
+## CONVERSATIONAL MODE ACTIVE
+The user is asking a conversational question. Answer from your knowledge.
+DO NOT use any tools. DO NOT search for files. Just respond naturally.
+"""
+
+    return f'''{BRAIN_IDENTITY}
 
 ## YOUR TOOLS (in order of preference):
 1. **search_brain** - Find files instantly. USE THIS FIRST instead of exploring directories.
@@ -302,6 +487,9 @@ def get_system_prompt():
 4. Be concise. Your tokens cost money. Tools are FREE.
 5. When EAI creates files, report what was created and move on.
 6. If a tool returns an error, tell Hugo and try a different approach.
+7. **MAX 15 TOOL CALLS** per response. If you approach the limit, STOP and respond.
+8. **NEVER** call the same tool with identical arguments twice.
+9. **NEVER** call the same tool more than 3 times consecutively.
 
 ## EFFICIENCY:
 - search_brain > view_brain for finding files
@@ -309,20 +497,20 @@ def get_system_prompt():
 - execute_task handles create AND edit - one call per task
 - Dont narrate what youre about to do. Just do it.
 {mem_context}
-
+{conversational_override}
 You have full control. Use your tools. Report results. Move fast.'''
 
 # =============================================================================
 # CLAUDE API CALLER
 # =============================================================================
 
-def call_claude(messages, tools=None):
+def call_claude(messages, tools=None, system_prompt=None):
     for attempt in range(3):
         try:
             params = {
                 'model': 'claude-sonnet-4-20250514',
                 'max_tokens': 8000,
-                'system': get_system_prompt(),
+                'system': system_prompt or get_system_prompt(),
                 'messages': messages
             }
             if tools:
@@ -352,9 +540,9 @@ def chat():
     convo_memory = load_conversation_memory()
     convo_memory["sessions"] = convo_memory.get("sessions", 0) + 1
     save_conversation_memory(convo_memory)
-    
+
     console.print('[dim]Connecting to Brain...[/dim]')
-    
+
     try:
         status = requests.get(f'{brain_url}/status', timeout=5).json()
         h = status.get('hierarchy', {})
@@ -369,7 +557,8 @@ def chat():
         f'[bold cyan]🤖 EAI[/bold cyan] CodeLlama (hands)\n'
         f'[bold blue]🧠 THINKER[/bold blue] DeepSeek R1\n'
         f'[bold yellow]🐜 SWARM[/bold yellow] TinyLlama x100\n'
-        f'[dim]Session #{convo_memory["sessions"]} | Memory: {len(convo_memory.get("key_facts", []))} facts[/dim]',
+        f'[dim]Session #{convo_memory["sessions"]} | Memory: {len(convo_memory.get("key_facts", []))} facts[/dim]\n'
+        f'[dim]Tool Guard: max 15 calls, dedup ON, circuit breaker ON[/dim]',
         border_style='green'
     ))
     console.print()
@@ -392,11 +581,27 @@ def chat():
             console.print(f'\n[green]Tokens: {stats["tokens_used"]} | Cost: {stats["estimated_cost"]} | Uptime: {stats["uptime_minutes"]}min[/green]')
             break
 
+        # Reset tool guard for new user message
+        tool_guard.reset()
+
+        # Pre-flight check: Is this a conversational query?
+        is_conversational = tool_guard.is_conversational_query(user_input)
+
         conversation.append({'role': 'user', 'content': user_input})
         if len(conversation) > 30:
             conversation = conversation[-30:]
 
-        response, error = call_claude(conversation, TOOLS)
+        # Use appropriate system prompt and tools
+        if is_conversational:
+            # No tools for conversational queries
+            response, error = call_claude(
+                conversation,
+                tools=None,  # Disable tools
+                system_prompt=get_system_prompt(force_conversational=True)
+            )
+        else:
+            response, error = call_claude(conversation, TOOLS)
+
         if error:
             console.print(f'[red]Error: {error}[/red]')
             conversation = conversation[-4:]
@@ -404,10 +609,22 @@ def chat():
 
         tracker.track(response.usage.input_tokens, response.usage.output_tokens)
 
-        tool_count = 0
-        max_tools = 50
+        # Skip tool loop entirely for conversational mode
+        if is_conversational:
+            # Just print the response
+            for block in response.content:
+                if block.type == 'text' and block.text.strip():
+                    console.print(f'[green]Opus:[/green] {block.text}')
+                    conversation.append({'role': 'assistant', 'content': block.text.strip()})
 
-        while response.stop_reason == 'tool_use' and tool_count < max_tools:
+            stats = tracker.get_stats()
+            console.print(f'\n[dim](Tokens: {stats["tokens_used"]} | Cost: {stats["estimated_cost"]} | Tools: 0 - conversational)[/dim]\n')
+            continue
+
+        # Tool processing loop with guard
+        force_stop = False
+
+        while response.stop_reason == 'tool_use' and not force_stop:
             # Print any text before tools
             for block in response.content:
                 if block.type == 'text' and block.text.strip():
@@ -415,22 +632,62 @@ def chat():
 
             # Execute tools and collect results
             tool_results = []
+            blocked_tools = []
+
             for block in response.content:
                 if block.type == 'tool_use':
-                    tool_count += 1
-                    console.print(f'[dim]   → {block.name}[/dim]')
-                    
+                    # Check with guard before executing
+                    allowed, block_message = tool_guard.should_allow_call(block.name, block.input)
+
+                    if not allowed:
+                        # Tool blocked - return the block message as result
+                        blocked_tools.append(block.name)
+                        tool_results.append({
+                            'type': 'tool_result',
+                            'tool_use_id': block.id,
+                            'content': json.dumps({'blocked': True, 'message': block_message})
+                        })
+
+                        # Check if we should force stop
+                        if tool_guard.total_calls >= tool_guard.max_total_calls:
+                            force_stop = True
+                        continue
+
+                    console.print(f'[dim]   → {block.name} ({tool_guard.total_calls + 1}/{tool_guard.max_total_calls})[/dim]')
+
                     result = dispatch_tool(block.name, block.input)
-                    
+
+                    # Record the call with guard
+                    tool_guard.record_call(block.name, block.input, result)
+
                     # Show result summary
                     if 'error' in result:
                         console.print(f'[red]   ✗ Error: {result["error"][:100]}[/red]')
-                    
+
                     tool_results.append({
                         'type': 'tool_result',
                         'tool_use_id': block.id,
                         'content': json.dumps(result)[:4000]
                     })
+
+            # If we hit the limit, inject force-response message
+            if force_stop:
+                console.print(f'[yellow]   ⚠ FORCING RESPONSE - tool limit reached[/yellow]')
+                tool_results.append({
+                    'type': 'tool_result',
+                    'tool_use_id': 'system',
+                    'content': tool_guard.get_force_response_message()
+                })
+
+                # Make final call without tools to force text response
+                response, error = call_claude(
+                    conversation + [
+                        {'role': 'assistant', 'content': response.content},
+                        {'role': 'user', 'content': tool_results}
+                    ],
+                    tools=None  # No tools - force text response
+                )
+                break
 
             # Continue conversation with tool results
             response, error = call_claude(
@@ -440,12 +697,16 @@ def chat():
                 ],
                 TOOLS
             )
-            
+
             if error:
                 console.print(f'[red]Error: {error}[/red]')
                 break
-            
+
             tracker.track(response.usage.input_tokens, response.usage.output_tokens)
+
+            # Check if we should force stop after this iteration
+            if tool_guard.total_calls >= tool_guard.max_total_calls:
+                force_stop = True
 
         # Print final response
         final_text = ''
@@ -457,8 +718,9 @@ def chat():
         if final_text.strip():
             conversation.append({'role': 'assistant', 'content': final_text.strip()})
 
+        guard_stats = tool_guard.get_stats()
         stats = tracker.get_stats()
-        console.print(f'\n[dim](Tokens: {stats["tokens_used"]} | Cost: {stats["estimated_cost"]} | Tools: {tool_count})[/dim]\n')
+        console.print(f'\n[dim](Tokens: {stats["tokens_used"]} | Cost: {stats["estimated_cost"]} | Tools: {guard_stats["total_calls"]}/{tool_guard.max_total_calls})[/dim]\n')
 
 if __name__ == '__main__':
     chat()
