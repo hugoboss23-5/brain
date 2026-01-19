@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brain Dashboard</title>
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a25;
+            --accent-opus: #8b5cf6;
+            --accent-eai: #06b6d4;
+            --accent-thinker: #3b82f6;
+            --accent-swarm: #f59e0b;
+            --accent-success: #10b981;
+            --accent-error: #ef4444;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-dim: #64748b;
+            --glow-opus: rgba(139, 92, 246, 0.4);
+            --glow-eai: rgba(6, 182, 212, 0.4);
+            --glow-thinker: rgba(59, 130, 246, 0.4);
+            --glow-swarm: rgba(245, 158, 11, 0.4);
+        }
+
+        [data-theme="light"] {
+            --bg-primary: #f8fafc;
+            --bg-secondary: #e2e8f0;
+            --bg-card: #ffffff;
+            --text-primary: #1e293b;
+            --text-secondary: #475569;
+            --text-dim: #94a3b8;
+        }
+
+        [data-theme="matrix"] {
+            --bg-primary: #000000;
+            --bg-secondary: #001100;
+            --bg-card: #002200;
+            --accent-opus: #00ff00;
+            --accent-eai: #00ff00;
+            --accent-thinker: #00ff00;
+            --accent-swarm: #00ff00;
+            --text-primary: #00ff00;
+            --text-secondary: #00cc00;
+            --glow-opus: rgba(0, 255, 0, 0.4);
+            --glow-eai: rgba(0, 255, 0, 0.3);
+            --glow-thinker: rgba(0, 255, 0, 0.3);
+            --glow-swarm: rgba(0, 255, 0, 0.3);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated background */
+        .bg-grid {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image:
+                linear-gradient(rgba(139, 92, 246, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(139, 92, 246, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+            margin-bottom: 30px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logo-icon {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, var(--accent-opus), var(--accent-thinker));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            box-shadow: 0 0 30px var(--glow-opus);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 20px var(--glow-opus); }
+            50% { box-shadow: 0 0 40px var(--glow-opus); }
+        }
+
+        .logo h1 {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-opus), var(--accent-eai));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo span {
+            font-size: 12px;
+            color: var(--text-dim);
+            display: block;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .theme-btn {
+            padding: 8px 16px;
+            background: var(--bg-card);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .theme-btn:hover {
+            border-color: var(--accent-opus);
+            box-shadow: 0 0 15px var(--glow-opus);
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: var(--bg-card);
+            border-radius: 20px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--accent-success);
+            animation: blink 1s infinite;
+        }
+
+        .status-dot.offline {
+            background: var(--accent-error);
+            animation: none;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Hierarchy Visualization */
+        .hierarchy {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 0;
+            position: relative;
+        }
+
+        .hierarchy-connections {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .hierarchy-connections svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .hierarchy-connections line {
+            stroke: var(--accent-opus);
+            stroke-width: 2;
+            stroke-dasharray: 5, 5;
+            animation: dash 20s linear infinite;
+        }
+
+        @keyframes dash {
+            to { stroke-dashoffset: -100; }
+        }
+
+        /* Model Cards */
+        .model-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .model-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--card-accent);
+        }
+
+        .model-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 40px var(--card-glow);
+        }
+
+        .commander-card {
+            --card-accent: var(--accent-opus);
+            --card-glow: var(--glow-opus);
+            width: 350px;
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        .worker-cards {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 25px;
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        .worker-card {
+            min-width: 280px;
+        }
+
+        .worker-card.eai { --card-accent: var(--accent-eai); --card-glow: var(--glow-eai); }
+        .worker-card.thinker { --card-accent: var(--accent-thinker); --card-glow: var(--glow-thinker); }
+        .worker-card.swarm { --card-accent: var(--accent-swarm); --card-glow: var(--glow-swarm); }
+
+        .model-icon {
+            font-size: 40px;
+            margin-bottom: 15px;
+        }
+
+        .model-name {
+            font-size: 22px;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: var(--card-accent);
+        }
+
+        .model-role {
+            font-size: 13px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 15px;
+        }
+
+        .model-desc {
+            font-size: 14px;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+
+        .model-status {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+
+        .model-status code {
+            background: rgba(139, 92, 246, 0.1);
+            padding: 2px 8px;
+            border-radius: 4px;
+            color: var(--accent-opus);
+        }
+
+        /* Stats Grid */
+        .stats-section {
+            margin-top: 50px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--accent-opus);
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Session Info */
+        .session-section {
+            margin-top: 30px;
+        }
+
+        .session-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .session-working {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: rgba(139, 92, 246, 0.1);
+            border-radius: 8px;
+            border-left: 3px solid var(--accent-opus);
+        }
+
+        .working-label {
+            font-size: 12px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+        }
+
+        .working-value {
+            font-size: 15px;
+            color: var(--text-primary);
+        }
+
+        .recent-files {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .file-tag {
+            background: var(--bg-secondary);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: 'Consolas', monospace;
+        }
+
+        /* Customization Panel */
+        .customize-section {
+            margin-top: 30px;
+        }
+
+        .customize-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .theme-options {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .theme-option {
+            padding: 15px 25px;
+            border-radius: 10px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.3s;
+            text-align: center;
+        }
+
+        .theme-option:hover {
+            transform: scale(1.05);
+        }
+
+        .theme-option.active {
+            border-color: var(--accent-opus);
+        }
+
+        .theme-option.dark {
+            background: linear-gradient(135deg, #0a0a0f, #1a1a25);
+            color: #f1f5f9;
+        }
+
+        .theme-option.light {
+            background: linear-gradient(135deg, #f8fafc, #e2e8f0);
+            color: #1e293b;
+        }
+
+        .theme-option.matrix {
+            background: linear-gradient(135deg, #000, #001100);
+            color: #00ff00;
+        }
+
+        /* Footer */
+        footer {
+            margin-top: 50px;
+            padding: 20px 0;
+            border-top: 1px solid rgba(139, 92, 246, 0.2);
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 13px;
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .worker-cards {
+                grid-template-columns: 1fr;
+            }
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            header {
+                flex-direction: column;
+                gap: 15px;
+            }
+        }
+
+        /* Activity Log */
+        .log-section {
+            margin-top: 30px;
+        }
+
+        .log-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            display: flex;
+            gap: 15px;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 13px;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-time {
+            color: var(--text-dim);
+            font-family: monospace;
+            min-width: 80px;
+        }
+
+        .log-model {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            text-transform: uppercase;
+            min-width: 70px;
+            text-align: center;
+        }
+
+        .log-model.opus { background: rgba(139, 92, 246, 0.2); color: var(--accent-opus); }
+        .log-model.eai { background: rgba(6, 182, 212, 0.2); color: var(--accent-eai); }
+        .log-model.thinker { background: rgba(59, 130, 246, 0.2); color: var(--accent-thinker); }
+        .log-model.swarm { background: rgba(245, 158, 11, 0.2); color: var(--accent-swarm); }
+
+        .log-message {
+            color: var(--text-secondary);
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+
+    <div class="container">
+        <header>
+            <div class="logo">
+                <div class="logo-icon">🧠</div>
+                <div>
+                    <h1>BRAIN</h1>
+                    <span>Multi-Model AI Architecture</span>
+                </div>
+            </div>
+            <div class="controls">
+                <div class="status-indicator">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">Connecting...</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Hierarchy Visualization -->
+        <section class="hierarchy">
+            <div class="model-card commander-card">
+                <div class="model-icon">👑</div>
+                <div class="model-name">OPUS</div>
+                <div class="model-role">Commander & Strategist</div>
+                <div class="model-desc">
+                    Orchestrates all models. Handles thinking, planning, reasoning, and conversation with Hugo.
+                </div>
+                <div class="model-status">
+                    Model: <code id="opusModel">claude-opus</code>
+                </div>
+            </div>
+
+            <div class="worker-cards">
+                <div class="model-card worker-card eai">
+                    <div class="model-icon">🤖</div>
+                    <div class="model-name">EAI</div>
+                    <div class="model-role">Hands / Executor</div>
+                    <div class="model-desc">
+                        Creates files, edits code, executes Python. The hands that build what Opus designs.
+                    </div>
+                    <div class="model-status">
+                        Model: <code id="eaiModel">loading...</code>
+                    </div>
+                </div>
+
+                <div class="model-card worker-card thinker">
+                    <div class="model-icon">🧠</div>
+                    <div class="model-name">DeepSeek R1</div>
+                    <div class="model-role">Deep Thinker</div>
+                    <div class="model-desc">
+                        Complex reasoning and analysis. Called for architecture decisions and multi-step problems.
+                    </div>
+                    <div class="model-status">
+                        Model: <code id="thinkerModel">loading...</code>
+                    </div>
+                </div>
+
+                <div class="model-card worker-card swarm">
+                    <div class="model-icon">🐜</div>
+                    <div class="model-name">TinyLlama Swarm</div>
+                    <div class="model-role">Parallel Workers</div>
+                    <div class="model-desc">
+                        50-200 instances working in parallel via Pluribus consensus. Massive parallel processing power.
+                    </div>
+                    <div class="model-status">
+                        Model: <code id="swarmModel">loading...</code>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Stats -->
+        <section class="stats-section">
+            <h2 class="section-title">📊 Performance Stats</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalTasks">0</div>
+                    <div class="stat-label">Total Tasks</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="successRate">0%</div>
+                    <div class="stat-label">Success Rate</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="cachedDirs">0</div>
+                    <div class="stat-label">Cached Dirs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="indexedFiles">-</div>
+                    <div class="stat-label">Indexed Files</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Session Info -->
+        <section class="session-section">
+            <h2 class="section-title">💡 Current Session</h2>
+            <div class="session-card">
+                <div class="session-working">
+                    <div>
+                        <div class="working-label">Currently Working On</div>
+                        <div class="working-value" id="workingOn">Nothing active</div>
+                    </div>
+                </div>
+                <div>
+                    <div class="working-label" style="margin-bottom: 10px;">Recent Files</div>
+                    <div class="recent-files" id="recentFiles">
+                        <span class="file-tag">No files viewed yet</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Activity Log -->
+        <section class="log-section">
+            <h2 class="section-title">📜 Activity Log</h2>
+            <div class="log-card" id="logContainer">
+                <div class="log-entry">
+                    <span class="log-time">--:--:--</span>
+                    <span class="log-model opus">System</span>
+                    <span class="log-message">Dashboard initialized, waiting for connection...</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Customization -->
+        <section class="customize-section">
+            <h2 class="section-title">🎨 Customize Your View</h2>
+            <div class="customize-card">
+                <div class="theme-options">
+                    <div class="theme-option dark active" onclick="setTheme('dark')">
+                        <div style="font-size: 24px; margin-bottom: 5px;">🌙</div>
+                        <div>Dark</div>
+                    </div>
+                    <div class="theme-option light" onclick="setTheme('light')">
+                        <div style="font-size: 24px; margin-bottom: 5px;">☀️</div>
+                        <div>Light</div>
+                    </div>
+                    <div class="theme-option matrix" onclick="setTheme('matrix')">
+                        <div style="font-size: 24px; margin-bottom: 5px;">💚</div>
+                        <div>Matrix</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <footer>
+            Brain Dashboard v1.0 | Built by Hugo & Opus |
+            <span id="lastUpdate">Last update: never</span>
+        </footer>
+    </div>
+
+    <script>
+        const BRAIN_URL = 'http://127.0.0.1:5000';
+        let isConnected = false;
+        let logEntries = [];
+
+        // Theme Management
+        function setTheme(theme) {
+            document.body.setAttribute('data-theme', theme);
+            localStorage.setItem('brain-theme', theme);
+
+            document.querySelectorAll('.theme-option').forEach(el => {
+                el.classList.remove('active');
+            });
+            document.querySelector(`.theme-option.${theme}`).classList.add('active');
+
+            addLog('system', `Theme changed to ${theme}`);
+        }
+
+        // Load saved theme
+        const savedTheme = localStorage.getItem('brain-theme') || 'dark';
+        setTheme(savedTheme);
+
+        // Add log entry
+        function addLog(model, message) {
+            const now = new Date();
+            const time = now.toLocaleTimeString('en-US', { hour12: false });
+
+            logEntries.unshift({ time, model, message });
+            if (logEntries.length > 50) logEntries.pop();
+
+            renderLog();
+        }
+
+        function renderLog() {
+            const container = document.getElementById('logContainer');
+            container.innerHTML = logEntries.map(entry => `
+                <div class="log-entry">
+                    <span class="log-time">${entry.time}</span>
+                    <span class="log-model ${entry.model}">${entry.model}</span>
+                    <span class="log-message">${entry.message}</span>
+                </div>
+            `).join('');
+        }
+
+        // Fetch status from Brain server
+        async function fetchStatus() {
+            try {
+                const response = await fetch(`${BRAIN_URL}/status`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+
+                if (!response.ok) throw new Error('Server error');
+
+                const data = await response.json();
+                updateDashboard(data);
+
+                if (!isConnected) {
+                    addLog('system', 'Connected to Brain server');
+                    isConnected = true;
+                }
+
+                document.getElementById('statusDot').classList.remove('offline');
+                document.getElementById('statusText').textContent = 'Online';
+
+            } catch (error) {
+                if (isConnected) {
+                    addLog('system', 'Lost connection to Brain server');
+                    isConnected = false;
+                }
+                document.getElementById('statusDot').classList.add('offline');
+                document.getElementById('statusText').textContent = 'Offline';
+            }
+        }
+
+        // Fetch context
+        async function fetchContext() {
+            try {
+                const response = await fetch(`${BRAIN_URL}/context`);
+                if (!response.ok) return;
+
+                const data = await response.json();
+
+                // Working on
+                const workingOn = document.getElementById('workingOn');
+                workingOn.textContent = data.working_on || 'Nothing active';
+
+                // Recent files
+                const recentFiles = document.getElementById('recentFiles');
+                if (data.recent_files && data.recent_files.length > 0) {
+                    recentFiles.innerHTML = data.recent_files
+                        .slice(-8)
+                        .map(f => `<span class="file-tag">${f}</span>`)
+                        .join('');
+                } else {
+                    recentFiles.innerHTML = '<span class="file-tag">No files viewed yet</span>';
+                }
+
+            } catch (error) {
+                // Silent fail for context
+            }
+        }
+
+        // Update dashboard with status data
+        function updateDashboard(data) {
+            // Models
+            if (data.hierarchy) {
+                document.getElementById('eaiModel').textContent = data.hierarchy.hands || 'unknown';
+                document.getElementById('thinkerModel').textContent = data.hierarchy.thinker || 'unknown';
+                document.getElementById('swarmModel').textContent = data.hierarchy.swarm || 'unknown';
+            }
+
+            // Stats
+            if (data.memory) {
+                document.getElementById('totalTasks').textContent = data.memory.tasks || 0;
+                document.getElementById('successRate').textContent = data.memory.success_rate || '0%';
+            }
+
+            if (data.session) {
+                document.getElementById('cachedDirs').textContent = data.session.cached_dirs || 0;
+            }
+
+            // Last update
+            document.getElementById('lastUpdate').textContent =
+                `Last update: ${new Date().toLocaleTimeString()}`;
+        }
+
+        // Keyboard shortcut for theme toggle
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 't' && e.ctrlKey) {
+                const current = document.body.getAttribute('data-theme') || 'dark';
+                const themes = ['dark', 'light', 'matrix'];
+                const next = themes[(themes.indexOf(current) + 1) % themes.length];
+                setTheme(next);
+            }
+        });
+
+        // Initial fetch and polling
+        addLog('system', 'Dashboard starting...');
+        fetchStatus();
+        fetchContext();
+
+        // Poll every 3 seconds
+        setInterval(() => {
+            fetchStatus();
+            fetchContext();
+        }, 3000);
+
+        // Add some initial guidance
+        setTimeout(() => {
+            addLog('opus', 'Ready to orchestrate. Watching for activity...');
+        }, 1500);
+    </script>
+</body>
+</html>
