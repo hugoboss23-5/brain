@@ -1,0 +1,1 @@
+G.add_node('AI1'); G.add_node('AI2')

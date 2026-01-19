@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live Agents</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --card: #111a2b;
+      --accent: #5de4c7;
+      --text: #e9eef7;
+      --muted: #94a3b8;
+      --danger: #f87171;
+      --warning: #fbbf24;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: radial-gradient(circle at 20% 20%, #13203a, #0b1220 50%), #0b1220;
+      color: var(--text);
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .title {
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .pill {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(93, 228, 199, 0.12);
+      color: var(--accent);
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .card h3 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .status {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent);
+    }
+    .error { color: var(--danger); }
+    .muted { color: var(--muted); }
+    .summary {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .summary div {
+      background: var(--card);
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 14px;
+    }
+    .controls {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .control-card {
+      background: var(--card);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: var(--text);
+      min-width: 220px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .control-card button {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    .control-card input[type="range"] {
+      flex: 1;
+    }
+    .globe-wrap {
+      perspective: 1200px;
+      transition: transform 0.4s ease;
+    }
+    .search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 8px 12px;
+      color: var(--muted);
+      min-width: 220px;
+    }
+    .search input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 14px;
+    }
+    .search input::placeholder { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="title">Live Agents</div>
+      <div class="muted" id="task">Task: none</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div class="search">
+        <span>🔍</span>
+        <input id="agent-search" type="text" placeholder="Search agents/status" />
+      </div>
+      <div class="pill" id="agent-count">0 active</div>
+    </div>
+  </header>
+
+  <div class="summary">
+    <div id="discoveries-count">Discoveries: 0</div>
+    <div id="solutions-count">Solutions: 0</div>
+    <div id="errors-count">Errors: 0</div>
+  </div>
+
+  <div class="controls">
+    <div class="control-card" style="flex:1;">
+      <span>Rotate</span>
+      <input id="angle-slider" type="range" min="-180" max="180" value="0" />
+      <span id="angle-value" class="muted">0°</span>
+      <button id="spin-left">⟲</button>
+      <button id="spin-right">⟳</button>
+    </div>
+    <div class="control-card">
+      <span>Zoom</span>
+      <input id="zoom-slider" type="range" min="50" max="150" value="100" />
+      <span id="zoom-value" class="muted">1.0x</span>
+    </div>
+  </div>
+
+  <div class="globe-wrap" id="globe-wrap">
+    <div class="grid" id="agents-grid"></div>
+  </div>
+
+  <script>
+    const grid = document.getElementById("agents-grid");
+    const taskEl = document.getElementById("task");
+    const countEl = document.getElementById("agent-count");
+    const discEl = document.getElementById("discoveries-count");
+    const solEl = document.getElementById("solutions-count");
+    const errEl = document.getElementById("errors-count");
+    const searchInput = document.getElementById("agent-search");
+    const angleSlider = document.getElementById("angle-slider");
+    const angleValue = document.getElementById("angle-value");
+    const zoomSlider = document.getElementById("zoom-slider");
+    const zoomValue = document.getElementById("zoom-value");
+    const spinLeft = document.getElementById("spin-left");
+    const spinRight = document.getElementById("spin-right");
+    const globeWrap = document.getElementById("globe-wrap");
+    let lastData = null;
+    let viewState = { angle: 0, zoom: 1.0, pan_x: 0, pan_y: 0 };
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch("http://127.0.0.1:8000/swarm/status", { cache: "no-store" });
+        if (!res.ok) throw new Error("Status " + res.status);
+        const data = await res.json();
+        lastData = data;
+        render();
+      } catch (e) {
+        grid.innerHTML = `<div class="card error">Unable to fetch swarm status: ${e.message}</div>`;
+      }
+    }
+
+    async function fetchView() {
+      try {
+        const res = await fetch("http://127.0.0.1:8000/globe/view", { cache: "no-store" });
+        if (!res.ok) throw new Error("Status " + res.status);
+        const data = await res.json();
+        if (data.view) {
+          viewState = data.view;
+          angleSlider.value = viewState.angle ?? 0;
+          zoomSlider.value = Math.round((viewState.zoom ?? 1) * 100);
+          updateTransform();
+        }
+      } catch (e) {
+        console.warn("globe view fetch failed", e);
+      }
+    }
+
+    async function pushView() {
+      try {
+        await fetch("http://127.0.0.1:8000/globe/set_view", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            angle: viewState.angle,
+            zoom: viewState.zoom,
+            pan_x: viewState.pan_x,
+            pan_y: viewState.pan_y,
+          }),
+        });
+      } catch (e) {
+        console.warn("globe view push failed", e);
+      }
+    }
+
+    function updateTransform() {
+      angleValue.textContent = `${Math.round(viewState.angle || 0)}°`;
+      zoomValue.textContent = `${(viewState.zoom || 1).toFixed(2)}x`;
+      globeWrap.style.transform = `perspective(1200px) rotateY(${viewState.angle || 0}deg) scale(${viewState.zoom || 1})`;
+    }
+
+    function render() {
+      if (!lastData) return;
+      const data = lastData;
+      const agents = data.agents || {};
+      const keys = Object.keys(agents);
+      countEl.textContent = `${keys.length} active`;
+      taskEl.textContent = `Task: ${data.task || "none"}`;
+      discEl.textContent = `Discoveries: ${data.discoveries?.length || 0}`;
+      solEl.textContent = `Solutions: ${data.solutions?.length || 0}`;
+      errEl.textContent = `Errors: ${data.errors?.length || 0}`;
+
+      if (!keys.length) {
+        grid.innerHTML = `<div class="card muted">No active agents yet.</div>`;
+        return;
+      }
+
+      grid.innerHTML = "";
+      const term = (searchInput.value || "").toLowerCase();
+      keys
+        .filter((id) => {
+          const status = String(agents[id] || "").toLowerCase();
+          return !term || id.toLowerCase().includes(term) || status.includes(term);
+        })
+        .forEach((id) => {
+          const status = agents[id];
+          const card = document.createElement("div");
+          card.className = "card";
+          card.innerHTML = `
+            <div class="badge"><span class="status"></span> ${id}</div>
+            <h3>Status: ${status}</h3>
+            <div class="muted">Last sync: just now</div>
+          `;
+          grid.appendChild(card);
+        });
+    }
+
+    searchInput.addEventListener("input", render);
+    angleSlider.addEventListener("input", () => {
+      viewState.angle = Number(angleSlider.value);
+      updateTransform();
+      pushView();
+    });
+    zoomSlider.addEventListener("input", () => {
+      viewState.zoom = Number(zoomSlider.value) / 100;
+      updateTransform();
+      pushView();
+    });
+    spinLeft.addEventListener("click", () => {
+      viewState.angle = Number(viewState.angle || 0) - 15;
+      angleSlider.value = viewState.angle;
+      updateTransform();
+      pushView();
+    });
+    spinRight.addEventListener("click", () => {
+      viewState.angle = Number(viewState.angle || 0) + 15;
+      angleSlider.value = viewState.angle;
+      updateTransform();
+      pushView();
+    });
+
+    fetchView();
+    fetchStatus();
+    setInterval(fetchStatus, 1500);
+    setInterval(fetchView, 3000);
+  </script>
+</body>
+</html>

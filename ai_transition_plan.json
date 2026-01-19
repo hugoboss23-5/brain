@@ -1,0 +1,103 @@
+{
+  "transition_plan": {
+    "title": "URGENT AI ARCHITECTURE RESTRUCTURE",
+    "initiated": "2026-01-17T04:53:20Z",
+    "priority": "CRITICAL",
+    "orchestrator": "Hugo via Claude (Anthropic API preserved)"
+  },
+  
+  "phase_1_immediate": {
+    "name": "ExecutionChat Replacement",
+    "status": "IN_PROGRESS",
+    "timeline": "IMMEDIATE",
+    "actions": [
+      {
+        "action": "Deploy ExecutionChatLlama",
+        "file_created": "execution_chat_llama_replacement.py",
+        "status": "COMPLETED"
+      },
+      {
+        "action": "Restrict Anthropic API access for ExecutionChat",
+        "status": "IMPLEMENTED"
+      },
+      {
+        "action": "Enable Hugo oversight logging",
+        "status": "ACTIVE"
+      }
+    ]
+  },
+  
+  "phase_2_infrastructure": {
+    "name": "Llama Infrastructure Audit & Setup", 
+    "timeline": "Next 24 hours",
+    "requirements": [
+      "Verify local Llama model availability",
+      "Setup Llama API server if needed",
+      "Test model performance benchmarks",
+      "Create fallback procedures"
+    ],
+    "files_created": [
+      "llama_infrastructure_setup.py"
+    ]
+  },
+  
+  "phase_3_systematic_replacement": {
+    "name": "Replace Remaining AI Instances",
+    "timeline": "48-72 hours", 
+    "targets": [
+      {
+        "instance": "brain_agent.py",
+        "current_api": "Anthropic (detected)",
+        "replacement": "Llama model",
+        "complexity": "Medium"
+      },
+      {
+        "instance": "brain_server.py", 
+        "current_api": "Anthropic (detected)",
+        "replacement": "Llama model",
+        "complexity": "Medium"
+      },
+      {
+        "instance": "brain_orchestrator.py",
+        "current_api": "Anthropic (detected)", 
+        "action": "EVALUATE - May need to remain Anthropic for Hugo control",
+        "complexity": "High"
+      }
+    ]
+  },
+  
+  "phase_4_validation": {
+    "name": "System Testing & Validation",
+    "timeline": "72+ hours",
+    "tests": [
+      "Llama model performance validation",
+      "Hugo's Claude orchestration verification", 
+      "Fallback system testing",
+      "End-to-end workflow validation"
+    ]
+  },
+  
+  "preservation_requirements": {
+    "hugo_claude_access": {
+      "status": "MUST_PRESERVE",
+      "api": "Anthropic",
+      "reason": "Hugo's personal AI and primary orchestrator",
+      "files_affected": ["brain_config.json"]
+    },
+    "orchestration_control": {
+      "maintained_by": "Claude (Hugo's interface)",
+      "oversight": "All Llama instances report to Hugo via Claude",
+      "audit_trail": "Mandatory for all AI actions"
+    }
+  },
+  
+  "rollback_plan": {
+    "trigger_conditions": [
+      "Llama models unavailable",
+      "Performance degradation > 50%", 
+      "Hugo requests rollback"
+    ],
+    "rollback_time": "< 15 minutes",
+    "preserved_configs": "All original configs backed up"
+  }
+}

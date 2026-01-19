@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Swarm Dashboard</title>
+    <link rel="stylesheet" href="agents.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="header-left">
+                <h1><i class="fas fa-robot"></i> AI Swarm Dashboard</h1>
+                <div class="status-indicator">
+                    <span class="status-dot active"></span>
+                    <span id="connection-status">Connected</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="time-display" id="current-time"></div>
+                <button class="emergency-stop" id="emergency-stop">
+                    <i class="fas fa-stop-circle"></i> EMERGENCY STOP
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Grid -->
+        <div class="dashboard-grid">
+            <!-- Agent Overview Panel -->
+            <div class="panel agent-overview">
+                <div class="panel-header">
+                    <h3><i class="fas fa-users"></i> Agent Overview</h3>
+                    <div class="agent-count">
+                        <span id="active-agents">0</span> Active
+                    </div>
+                </div>
+                <div class="agent-grid" id="agent-grid">
+                    <!-- Agent cards will be populated here -->
+                </div>
+            </div>
+
+            <!-- Network Visualization -->
+            <div class="panel network-panel">
+                <div class="panel-header">
+                    <h3><i class="fas fa-project-diagram"></i> Communication Network</h3>
+                </div>
+                <div class="network-container">
+                    <svg id="network-svg" class="network-svg"></svg>
+                </div>
+            </div>
+
+            <!-- Real-time Activity Feed -->
+            <div class="panel activity-feed">
+                <div class="panel-header">
+                    <h3><i class="fas fa-stream"></i> Live Activity</h3>
+                    <button class="clear-btn" id="clear-logs">Clear</button>
+                </div>
+                <div class="activity-list" id="activity-list">
+                    <!-- Activity items will be populated here -->
+                </div>
+            </div>
+
+            <!-- Performance Metrics -->
+            <div class="panel metrics-panel">
+                <div class="panel-header">
+                    <h3><i class="fas fa-chart-line"></i> Performance</h3>
+                </div>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value" id="tasks-completed">0</div>
+                        <div class="metric-label">Tasks Completed</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="avg-response-time">0ms</div>
+                        <div class="metric-label">Avg Response Time</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="files-modified">0</div>
+                        <div class="metric-label">Files Modified</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="cpu-usage">0%</div>
+                        <div class="metric-label">CPU Usage</div>
+                    </div>
+                </div>
+                <div class="performance-chart">
+                    <canvas id="performance-chart" width="400" height="200"></canvas>
+                </div>
+            </div>
+
+            <!-- Task Queue -->
+            <div class="panel task-queue">
+                <div class="panel-header">
+                    <h3><i class="fas fa-tasks"></i> Task Queue</h3>
+                    <span class="queue-count" id="queue-count">0 pending</span>
+                </div>
+                <div class="task-list" id="task-list">
+                    <!-- Tasks will be populated here -->
+                </div>
+            </div>
+
+            <!-- File Changes Monitor -->
+            <div class="panel file-monitor">
+                <div class="panel-header">
+                    <h3><i class="fas fa-folder-open"></i> File Changes</h3>
+                </div>
+                <div class="file-changes" id="file-changes">
+                    <!-- File change events will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Agent Detail Modal -->
+    <div class="modal" id="agent-modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <div class="modal-header">
+                <h2 id="modal-agent-name">Agent Details</h2>
+                <div class="modal-status" id="modal-agent-status"></div>
+            </div>
+            <div class="modal-body">
+                <div class="modal-section">
+                    <h4>Current Task</h4>
+                    <div id="modal-current-task">No active task</div>
+                </div>
+                <div class="modal-section">
+                    <h4>Recent Activity</h4>
+                    <div id="modal-recent-activity"></div>
+                </div>
+                <div class="modal-section">
+                    <h4>Performance Stats</h4>
+                    <div id="modal-performance-stats"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="swarm.js"></script>
+</body>
+</html>

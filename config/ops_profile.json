@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "watch_paths": [
+    "brain_server.py",
+    "brain_orchestrator.py",
+    "system",
+    "swarm",
+    "scripts",
+    "docs",
+    "config"
+  ],
+  "ignore": [
+    ".venv",
+    "__pycache__",
+    "Logs",
+    "node_modules",
+    ".git"
+  ],
+  "entrypoints": [
+    {
+      "name": "brain_server",
+      "path": "brain_server.py",
+      "command": "python brain_server.py",
+      "purpose": "FastAPI brain gateway (hands/thinker/swarm)."
+    },
+    {
+      "name": "orchestrator",
+      "path": "brain_orchestrator.py",
+      "command": "python brain_orchestrator.py",
+      "purpose": "Opus CLI for directing EAI/Thinker/Swarm."
+    },
+    {
+      "name": "jaw_dropper",
+      "path": "scripts/JAW_DROPPER.py",
+      "command": "python scripts/JAW_DROPPER.py",
+      "purpose": "Dash monitor for Python file health."
+    },
+    {
+      "name": "swarm_dashboard",
+      "path": "swarm/dashboard.html",
+      "command": "Open in browser or serve as static.",
+      "purpose": "Visual swarm network and activity."
+    }
+  ],
+  "dashboards": [
+    {
+      "name": "Swarm Dashboard",
+      "path": "swarm/dashboard.html",
+      "launch": "Open file:// or serve static."
+    },
+    {
+      "name": "Jaw Dropper",
+      "path": "scripts/JAW_DROPPER.py",
+      "launch": "python scripts/JAW_DROPPER.py"
+    },
+    {
+      "name": "Agent Dashboard",
+      "path": "agent_dashboard.html",
+      "launch": "Open file://"
+    }
+  ],
+  "docs": [
+    "docs/OPUS_WORKSHOP_BLUEPRINT.md",
+    "docs/WORKSHOP_COMMANDS.md",
+    "Operating/brain_overview.md",
+    "Candidates/OPUS_4_5_PROTOCOL.md"
+  ],
+  "queues_dir": "system/queues/from_claude_code"
+}

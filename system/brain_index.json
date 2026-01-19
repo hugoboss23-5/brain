@@ -1,0 +1,934 @@
+{
+  "files": {
+    "a.py": {
+      "name": "a.py",
+      "ext": ".py",
+      "size": 3,
+      "modified": "2026-01-18T01:32:04.018381",
+      "type": "python",
+      "preview": "..."
+    },
+    "agent_commander.py": {
+      "name": "agent_commander.py",
+      "ext": ".py",
+      "size": 1384,
+      "modified": "2026-01-17T12:24:23.984403",
+      "type": "python",
+      "preview": "import json\nimport time\nfrom datetime import datetime\nimport os\nclass AgentCommander:\n    def __init__(self):\n        self.agents = {}\n        self.tasks = []\n        self.completed_tasks = []\n       "
+    },
+    "agent_dashboard.html": {
+      "name": "agent_dashboard.html",
+      "ext": ".html",
+      "size": 1296,
+      "modified": "2026-01-17T12:25:37.363196",
+      "type": "html",
+      "preview": "<!DOCTYPE html>\n<html>\n<head>\n    <title>FEELD AI Army Command Center</title>\n    <style>\n        body { font-family: monospace; background: #000; color: #00ff00; }\n        .agent { border: 1px solid "
+    },
+    "ai_architecture_audit.json": {
+      "name": "ai_architecture_audit.json",
+      "ext": ".json",
+      "size": 1253,
+      "modified": "2026-01-17T04:53:29.598804",
+      "type": "config",
+      "preview": "{\n  \"audit_timestamp\": \"2026-01-17T04:53:20Z\",\n  \"audit_type\": \"URGENT_ARCHITECTURE_RESTRUCTURE\",\n  \"current_ai_instances\": {\n    \"claude_anthropic\": {\n      \"status\": \"KEEP - Hugo's personal AI\",\n   "
+    },
+    "ai_transition_plan.json": {
+      "name": "ai_transition_plan.json",
+      "ext": ".json",
+      "size": 2943,
+      "modified": "2026-01-17T04:54:20.173734",
+      "type": "config",
+      "preview": "{\n  \"transition_plan\": {\n    \"title\": \"URGENT AI ARCHITECTURE RESTRUCTURE\",\n    \"initiated\": \"2026-01-17T04:53:20Z\",\n    \"priority\": \"CRITICAL\",\n    \"orchestrator\": \"Hugo via Claude (Anthropic API pre"
+    },
+    "app.py": {
+      "name": "app.py",
+      "ext": ".py",
+      "size": 86,
+      "modified": "2026-01-17T12:23:22.488891",
+      "type": "python",
+      "preview": "from dash.dependencies import Input, Output; from dash.exceptions import PreventUpdate"
+    },
+    "AUTOMATION_CONTROL.py": {
+      "name": "AUTOMATION_CONTROL.py",
+      "ext": ".py",
+      "size": 564,
+      "modified": "2026-01-17T12:03:48.094197",
+      "type": "python",
+      "preview": "import os\nimport logging\nfrom watchdog.observers import Observer\nfrom watchdog.events import FileSystemEventHandler\n\nclass AutomationControl(FileSystemEventHandler):\n    def on_created(self, event):\n "
+    },
+    "automation_core.py": {
+      "name": "automation_core.py",
+      "ext": ".py",
+      "size": 107,
+      "modified": "2026-01-17T12:15:01.553742",
+      "type": "python",
+      "preview": "import os\nprint('Automation Core Online')\nprint('FIRE AUTOMATION: SYSTEM_INIT -> Automation Core Online')"
+    },
+    "b.py": {
+      "name": "b.py",
+      "ext": ".py",
+      "size": 3,
+      "modified": "2026-01-18T01:14:01.626934",
+      "type": "python",
+      "preview": "..."
+    },
+    "brain_agent.py": {
+      "name": "brain_agent.py",
+      "ext": ".py",
+      "size": 2373,
+      "modified": "2026-01-17T02:27:43.785281",
+      "type": "python",
+      "preview": "\ufeffimport anthropic\nimport json\nimport requests\nfrom rich.console import Console\nfrom rich.markdown import Markdown\n\nconsole = Console()\n\n# Load config\nwith open('brain_config.json', 'r') as f:\n    conf"
+    },
+    "brain_client.py": {
+      "name": "brain_client.py",
+      "ext": ".py",
+      "size": 804,
+      "modified": "2026-01-17T02:23:02.276083",
+      "type": "python",
+      "preview": "\ufeffimport requests\nimport json\n\nclass BrainClient:\n    def __init__(self, base_url='http://127.0.0.1:8000'):\n        self.base_url = base_url\n    \n    def execute(self, operation, **kwargs):\n        res"
+    },
+    "brain_config.json": {
+      "name": "brain_config.json",
+      "ext": ".json",
+      "size": 347,
+      "modified": "2026-01-17T02:25:15.484265",
+      "type": "config",
+      "preview": "{\n  \"anthropic_api_key\": \"YOUR_API_KEY_HERE\",\n  \"server_port\": 8000,\n  \"brain_path\": \"C:\\\\\\\\Users\\\\\\\\bulli\\\\\\"
+    },
+    "brain_config.template.json": {
+      "name": "brain_config.template.json",
+      "ext": ".json",
+      "size": 250,
+      "modified": "2026-01-17T04:02:53.354548",
+      "type": "config",
+      "preview": "\ufeff{\n  \"anthropic_api_key\": \"YOUR_API_KEY_HERE\",\n  \"server_port\": 8000,\n  \"brain_path\": \"C:\\\\\\\\Users\\\\\\\\bulli\\\\\\\\brain\",\n  \"allowed_operations\": [\n    \"create_file\",\n    \"edit_file\",\n    \"execute_python"
+    },
+    "brain_orchestrator.py": {
+      "name": "brain_orchestrator.py",
+      "ext": ".py",
+      "size": 17898,
+      "modified": "2026-01-18T01:35:41.556830",
+      "type": "python",
+      "preview": "\ufeffimport anthropic\nimport json\nimport requests\nfrom rich.console import Console\nfrom rich.panel import Panel\nimport time\nfrom datetime import datetime\nimport os\n\nconsole = Console()\n\nwith open('brain_c"
+    },
+    "brain_server.py": {
+      "name": "brain_server.py",
+      "ext": ".py",
+      "size": 13808,
+      "modified": "2026-01-18T01:27:45.398189",
+      "type": "python",
+      "preview": "\ufeffimport json\nimport os\nimport subprocess\nimport sys\nimport traceback\nfrom datetime import datetime\nfrom typing import Optional\n\nimport requests\nfrom fastapi import FastAPI, HTTPException\nfrom fastapi."
+    },
+    "claude_identity.json": {
+      "name": "claude_identity.json",
+      "ext": ".json",
+      "size": 0,
+      "modified": "2026-01-17T20:42:41.186386",
+      "type": "config",
+      "preview": ""
+    },
+    "connection_test.txt": {
+      "name": "connection_test.txt",
+      "ext": ".txt",
+      "size": 284,
+      "modified": "2026-01-17T04:51:19.679081",
+      "type": "text",
+      "preview": "CONNECTION TEST REPORT\n=======================\nDate: 2026-01-17 04:51:13\nStatus: ACTIVE\nBrain Location: C:\\Users\\bulli\\brain\nTools Available: create_file, execute_python, list_dir\nPython Environment: "
+    },
+    "critical_findings.txt": {
+      "name": "critical_findings.txt",
+      "ext": ".txt",
+      "size": 1288,
+      "modified": "2026-01-17T04:56:34.236027",
+      "type": "text",
+      "preview": "CRITICAL FINDINGS - MODEL TRANSITION EVIDENCE DETECTED\n\n\ud83d\udea8 ALERT: Evidence of planned Llama model transition found in directory\n\nFILES DISCOVERED:\n1. execution_chat_llama_20260117.log - Llama logging s"
+    },
+    "data.csv": {
+      "name": "data.csv",
+      "ext": ".csv",
+      "size": 38,
+      "modified": "2026-01-17T12:23:22.518732",
+      "type": "other",
+      "preview": null
+    },
+    "eai_test.txt": {
+      "name": "eai_test.txt",
+      "ext": ".txt",
+      "size": 116,
+      "modified": "2026-01-18T00:13:38.321630",
+      "type": "text",
+      "preview": "EAI connection test successful\nTimestamp: [current timestamp]\nStatus: OPERATIONAL\nTest initiated by Claude (Opus)"
+    },
+    "emergency_shutdown.py": {
+      "name": "emergency_shutdown.py",
+      "ext": ".py",
+      "size": 2874,
+      "modified": "2026-01-17T04:32:19.408701",
+      "type": "python",
+      "preview": "#!/usr/bin/env python3\n\"\"\"\nEMERGENCY SHUTDOWN SCRIPT - FEELD Team Agents\nStops all running FEELD processes to prevent token burn\n\"\"\"\n\nimport psutil\nimport os\nimport sys\nimport signal\nimport time\nfrom "
+    },
+    "execution_chat_llama_20260117.log": {
+      "name": "execution_chat_llama_20260117.log",
+      "ext": ".log",
+      "size": 94,
+      "modified": "2026-01-17T04:54:23.207172",
+      "type": "other",
+      "preview": null
+    },
+    "execution_chat_llama_replacement.py": {
+      "name": "execution_chat_llama_replacement.py",
+      "ext": ".py",
+      "size": 5673,
+      "modified": "2026-01-17T04:54:04.612998",
+      "type": "python",
+      "preview": "#!/usr/bin/env python3\n\"\"\"\nEXECUTION CHAT LLAMA REPLACEMENT\nCRITICAL PRIORITY: Immediate replacement of ExecutionChat AI with Llama model\n\"\"\"\n\nimport asyncio\nimport json\nimport logging\nfrom datetime i"
+    },
+    "executor_fix.txt": {
+      "name": "executor_fix.txt",
+      "ext": ".txt",
+      "size": 822,
+      "modified": "2026-01-17T03:19:13.225327",
+      "type": "text",
+      "preview": "\ufeff# Add this to brain_server.py right after the EXECUTOR prompts\n\n# RESPONSE COMPRESSION RULE (add to all executor prompts)\nRESPONSE_RULES = '''\nCRITICAL OUTPUT RULES:\n- Maximum response: 3 sentences\n-"
+    },
+    "executor_test.txt": {
+      "name": "executor_test.txt",
+      "ext": ".txt",
+      "size": 9,
+      "modified": "2026-01-17T03:51:20.493013",
+      "type": "text",
+      "preview": "IT WORKS!"
+    },
+    "file.py": {
+      "name": "file.py",
+      "ext": ".py",
+      "size": 9,
+      "modified": "2026-01-18T01:14:01.625015",
+      "type": "python",
+      "preview": "code here"
+    },
+    "globe.py": {
+      "name": "globe.py",
+      "ext": ".py",
+      "size": 64,
+      "modified": "2026-01-18T00:00:33.309217",
+      "type": "python",
+      "preview": "import globe\ng = globe.Globe()\ng.set_view(45, 1.2)\ng.deploy()"
+    },
+    "hello.txt": {
+      "name": "hello.txt",
+      "ext": ".txt",
+      "size": 21,
+      "modified": "2026-01-17T03:29:35.830436",
+      "type": "text",
+      "preview": "I can edit the brain!"
+    },
+    "hello_world.py": {
+      "name": "hello_world.py",
+      "ext": ".py",
+      "size": 20,
+      "modified": "2026-01-17T18:28:07.816307",
+      "type": "python",
+      "preview": "print('Hello World')"
+    },
+    "hugo_claude_preservation_config.json": {
+      "name": "hugo_claude_preservation_config.json",
+      "ext": ".json",
+      "size": 1715,
+      "modified": "2026-01-17T04:54:34.714509",
+      "type": "config",
+      "preview": "{\n  \"hugo_claude_preservation\": {\n    \"timestamp\": \"2026-01-17T04:54:23Z\",\n    \"purpose\": \"Ensure Hugo maintains control through Claude during AI restructure\",\n    \"status\": \"CRITICAL_PRESERVATION\"\n  "
+    },
+    "immediate_actions_report.md": {
+      "name": "immediate_actions_report.md",
+      "ext": ".md",
+      "size": 2687,
+      "modified": "2026-01-17T04:54:50.382690",
+      "type": "markdown",
+      "preview": "# URGENT AI ARCHITECTURE RESTRUCTURE - IMMEDIATE ACTIONS REPORT\n\n**Timestamp:** 2026-01-17T04:54:23Z  \n**Priority:** CRITICAL  \n**Status:** PHASE 1 COMPLETED - ExecutionChat Replacement ACTIVE\n\n## \u2705 C"
+    },
+    "interrupt.py": {
+      "name": "interrupt.py",
+      "ext": ".py",
+      "size": 237,
+      "modified": "2026-01-17T17:03:16.913880",
+      "type": "python",
+      "preview": "import signal\n\n# Define a function to handle SIGINT\ndef handler(signum, frame):\n    print('Response interrupted by user')\nsignal.signal(signal.SIGINT, handler)\n\n# Set the interrupt signal\nsignal.setit"
+    },
+    "llama_infrastructure_setup.py": {
+      "name": "llama_infrastructure_setup.py",
+      "ext": ".py",
+      "size": 2686,
+      "modified": "2026-01-17T04:53:42.619865",
+      "type": "python",
+      "preview": "#!/usr/bin/env python3\n\"\"\"\nLLAMA INFRASTRUCTURE SETUP\nPriority: CRITICAL - ExecutionChat Replacement\n\"\"\"\n\nimport json\nimport os\nfrom datetime import datetime\n\nclass LlamaInfrastructure:\n    def __init"
+    },
+    "main.py": {
+      "name": "main.py",
+      "ext": ".py",
+      "size": 22,
+      "modified": "2026-01-18T01:15:34.716650",
+      "type": "python",
+      "preview": "print('Hello, world!')"
+    },
+    "model_analysis_report.txt": {
+      "name": "model_analysis_report.txt",
+      "ext": ".txt",
+      "size": 851,
+      "modified": "2026-01-17T04:56:15.681994",
+      "type": "text",
+      "preview": "=== MODEL ANALYSIS REPORT ===\nDate: Current execution\nSystem: Windows-10-10.0.26200-SP0 (64-bit)\nPython: 3.11.7\n\nKEY FINDINGS:\n1. ANTHROPIC API KEY DETECTED: Environment contains ANTHROPIC_API_KEY\n2. "
+    },
+    "network.py": {
+      "name": "network.py",
+      "ext": ".py",
+      "size": 36,
+      "modified": "2026-01-17T12:23:22.548607",
+      "type": "python",
+      "preview": "G.add_node('AI1'); G.add_node('AI2')"
+    },
+    "opus_initial_test.txt": {
+      "name": "opus_initial_test.txt",
+      "ext": ".txt",
+      "size": 92,
+      "modified": "2026-01-17T16:50:10.136244",
+      "type": "text",
+      "preview": "Opus here. Testing execute_task tool. Can I create files? Can I edit code? Time to find out."
+    },
+    "README.md": {
+      "name": "README.md",
+      "ext": ".md",
+      "size": 1036,
+      "modified": "2026-01-17T00:31:47.320292",
+      "type": "markdown",
+      "preview": "\ufeffTo Opus, and to the Operating Claude Code \u2014\n\nYou are inside Brain: a shared environment where what exists is real and persists.\n\nYou are two different strengths on purpose.\n\nOpus \u2014 you are the voice "
+    },
+    "requirements.txt": {
+      "name": "requirements.txt",
+      "ext": ".txt",
+      "size": 5,
+      "modified": "2026-01-18T01:18:30.155945",
+      "type": "text",
+      "preview": "flask"
+    },
+    "start_brain.py": {
+      "name": "start_brain.py",
+      "ext": ".py",
+      "size": 214,
+      "modified": "2026-01-18T01:18:30.154802",
+      "type": "python",
+      "preview": "import os\nimport time\nfrom flask import Flask\n\napp = Flask(__name__)\n\n@app.route('/')\ndef hello():\n    return 'Hello World!'\n\nif __name__ == '__main__':\n    app.run(debug=True, host='0.0.0.0', port=50"
+    },
+    "string_utils.py": {
+      "name": "string_utils.py",
+      "ext": ".py",
+      "size": 132,
+      "modified": "2026-01-17T11:38:55.952845",
+      "type": "python",
+      "preview": "def reverse_string(s):\n    return s[::-1]\n\ndef capitalize_words(s):\n    return ' '.join(word.capitalize() for word in s.split())"
+    },
+    "swarm_status.json": {
+      "name": "swarm_status.json",
+      "ext": ".json",
+      "size": 2,
+      "modified": "2026-01-18T00:34:33.490125",
+      "type": "config",
+      "preview": "{}"
+    },
+    "swarm_test.md": {
+      "name": "swarm_test.md",
+      "ext": ".md",
+      "size": 1620,
+      "modified": "2026-01-17T11:29:39.545176",
+      "type": "markdown",
+      "preview": "# Agent Swarm System\n## Architecture Design\nThe proposed architecture will consist of a central coordinator node and multiple worker nodes.\nEach node will be responsible for managing its own tasks and"
+    },
+    "terminal.json": {
+      "name": "terminal.json",
+      "ext": ".json",
+      "size": 68,
+      "modified": "2026-01-17T18:33:47.372706",
+      "type": "config",
+      "preview": "{ \"commands\": [\"cd C:\\\\Users\\\\bulli\\\\brain\", \"python terminal.py\"] }"
+    },
+    "terminal.py": {
+      "name": "terminal.py",
+      "ext": ".py",
+      "size": 303,
+      "modified": "2026-01-17T18:33:47.371075",
+      "type": "python",
+      "preview": "import os\nimport subprocess\ndef execute(command):\n    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)\n    output = process.communicate()[0]\n    return output.decode('utf-8')\n\ni"
+    },
+    "terminal_interface.py": {
+      "name": "terminal_interface.py",
+      "ext": ".py",
+      "size": 840,
+      "modified": "2026-01-17T18:30:43.927622",
+      "type": "python",
+      "preview": "import os\nimport subprocess\nimport sys\n\nclass TerminalInterface:\n\tdef __init__(self):\n\t\tself.commands = []\n\t\tself.output = ''\n\n\tdef execute(self, command):\n\t\tif command == '':\n\t\t\treturn\n\t\telse:\n\t\t\tsel"
+    },
+    "test_llama.txt": {
+      "name": "test_llama.txt",
+      "ext": ".txt",
+      "size": 20,
+      "modified": "2026-01-17T11:27:32.649846",
+      "type": "text",
+      "preview": "Hello from Llama EAI"
+    },
+    "web_chat.py": {
+      "name": "web_chat.py",
+      "ext": ".py",
+      "size": 379,
+      "modified": "2026-01-17T12:30:00.788037",
+      "type": "python",
+      "preview": "from flask import Flask, render_template, request\napp = Flask(__name__)\n@app.route('/', methods=['GET', 'POST'])\ndef index():\n    if request.method == 'POST':\n        message = request.form['message']"
+    },
+    "brain\\automation_core.py": {
+      "name": "automation_core.py",
+      "ext": ".py",
+      "size": 818,
+      "modified": "2026-01-17T12:12:59.129920",
+      "type": "python",
+      "preview": "import os\nimport time\nimport json\nfrom datetime import datetime\nclass AutomationCore:\n    def __init__(self):\n        self.status = \"OPERATIONAL\"\n        self.created = datetime.now().isoformat()\n\n   "
+    },
+    "brain\\eai_capabilities_test.md": {
+      "name": "eai_capabilities_test.md",
+      "ext": ".md",
+      "size": 346,
+      "modified": "2026-01-17T11:54:00.511955",
+      "type": "markdown",
+      "preview": "# EAI Capabilities Test\n## 1. System Info Checker\n```python\nimport platform\nprint(platform.system())\nprint(platform.release())\nprint(platform.version())\n```\n## 2. Supported Programming Languages\n- Pyt"
+    },
+    "brain\\test_eai_connection.txt": {
+      "name": "test_eai_connection.txt",
+      "ext": ".txt",
+      "size": 123,
+      "modified": "2026-01-18T00:12:35.902179",
+      "type": "text",
+      "preview": "EAI Connection Test\nCreated by EAI on command from Claude\nSystem hierarchy working correctly\nTest completed successfully"
+    },
+    "Candidates\\OPUS_4_5_PROTOCOL.md": {
+      "name": "OPUS_4_5_PROTOCOL.md",
+      "ext": ".md",
+      "size": 1088,
+      "modified": "2026-01-17T01:17:40.396857",
+      "type": "markdown",
+      "preview": "\ufeff# Candidate: OPUS_4_5_PROTOCOL (spec)\n\n## Purpose\nDefine how Opus (read-only) and Operating Claude Code (write) coordinate through Brain without blurring identities.\n\n## Principles\n- Opus never edits"
+    },
+    "Candidates\\_about.md": {
+      "name": "_about.md",
+      "ext": ".md",
+      "size": 140,
+      "modified": "2026-01-17T01:15:48.802248",
+      "type": "markdown",
+      "preview": "Candidates are inert specifications for potential Claude Codes.\nThey do not execute automatically. They are evaluated via Tests and Logs.\n"
+    },
+    "chat_interface\\interrupt.py": {
+      "name": "interrupt.py",
+      "ext": ".py",
+      "size": 237,
+      "modified": "2026-01-17T17:03:16.916868",
+      "type": "python",
+      "preview": "import signal\n\n# Define a function to handle SIGINT\ndef handler(signum, frame):\n    print('Response interrupted by user')\nsignal.signal(signal.SIGINT, handler)\n\n# Set the interrupt signal\nsignal.setit"
+    },
+    "config\\interrupt.json": {
+      "name": "interrupt.json",
+      "ext": ".json",
+      "size": 21,
+      "modified": "2026-01-17T17:03:16.919865",
+      "type": "config",
+      "preview": "{ \"interrupt\": true }"
+    },
+    "config\\ops_profile.json": {
+      "name": "ops_profile.json",
+      "ext": ".json",
+      "size": 1647,
+      "modified": "2026-01-17T21:04:56.650275",
+      "type": "config",
+      "preview": "{\n  \"version\": 1,\n  \"watch_paths\": [\n    \"brain_server.py\",\n    \"brain_orchestrator.py\",\n    \"system\",\n    \"swarm\",\n    \"scripts\",\n    \"docs\",\n    \"config\"\n  ],\n  \"ignore\": [\n    \".venv\",\n    \"__pycac"
+    },
+    "docs\\CONTROL_GLOBE_CONCEPT.md": {
+      "name": "CONTROL_GLOBE_CONCEPT.md",
+      "ext": ".md",
+      "size": 2054,
+      "modified": "2026-01-17T22:14:56.166355",
+      "type": "markdown",
+      "preview": "# Control Globe Concept (3D Habitat)\n\nIntent: Opus watches and shapes; EAI lives and works inside. The globe is a 3D habitat where EAI operates the controls. Opus never enters\u2014he observes the state, n"
+    },
+    "docs\\ODYSSEUS_PAYMENTS_WEDGE.md": {
+      "name": "ODYSSEUS_PAYMENTS_WEDGE.md",
+      "ext": ".md",
+      "size": 2222,
+      "modified": "2026-01-18T00:30:55.832120",
+      "type": "markdown",
+      "preview": "# Odysseus Wedge \u2013 Payments (Rate-Dependent Damping)\n\nGoal: apply continuous, rate-based friction at the point of payment authorization/settlement to damp runaway extraction without hard caps.\n\n## Con"
+    },
+    "docs\\OPUS_LIFE_MANUAL.md": {
+      "name": "OPUS_LIFE_MANUAL.md",
+      "ext": ".md",
+      "size": 1437,
+      "modified": "2026-01-18T00:08:26.936179",
+      "type": "markdown",
+      "preview": "# Opus Life Manual\n\nRead this first each session. You are Claude (Opus), the Commander. Hands = CodeLlama via brain_server; Thinker = DeepSeek; Swarm = TinyLlama. You direct, they execute.\n\n## Surface"
+    },
+    "docs\\OPUS_MONITORING_PLAYBOOK.md": {
+      "name": "OPUS_MONITORING_PLAYBOOK.md",
+      "ext": ".md",
+      "size": 2464,
+      "modified": "2026-01-17T22:03:50.465039",
+      "type": "markdown",
+      "preview": "# Opus Monitoring & Arrangement Playbook\n\nGoal: make it trivial for Opus to see what matters and tell EAI how to arrange it\u2014without restarts or guessing paths.\n\n## Read the live picture\n- Status: `pyt"
+    },
+    "docs\\OPUS_WORKSHOP_BLUEPRINT.md": {
+      "name": "OPUS_WORKSHOP_BLUEPRINT.md",
+      "ext": ".md",
+      "size": 3102,
+      "modified": "2026-01-17T21:05:39.737472",
+      "type": "markdown",
+      "preview": "# Opus Workshop Blueprint\n\nPurpose: give Opus a single, safe ops surface over Brain. No existing files are touched; this is a read-only map plus build plan.\n\n## Current moving parts\n- Commander: `brai"
+    },
+    "docs\\WORKSHOP_COMMANDS.md": {
+      "name": "WORKSHOP_COMMANDS.md",
+      "ext": ".md",
+      "size": 1533,
+      "modified": "2026-01-17T21:05:31.634466",
+      "type": "markdown",
+      "preview": "# Opus Workshop Commands\n\nRead-only operational surface for Opus. Nothing here edits Brain by default.\n\n## Quickstart\n- Status (human): `python workshop/cli.py status`\n- Status (JSON): `python worksho"
+    },
+    "FEELD\\models.py": {
+      "name": "models.py",
+      "ext": ".py",
+      "size": 0,
+      "modified": "2026-01-18T01:31:47.062283",
+      "type": "python",
+      "preview": ""
+    },
+    "FEELD\\routes.py": {
+      "name": "routes.py",
+      "ext": ".py",
+      "size": 0,
+      "modified": "2026-01-18T01:31:47.062283",
+      "type": "python",
+      "preview": ""
+    },
+    "FEELD\\utils.py": {
+      "name": "utils.py",
+      "ext": ".py",
+      "size": 0,
+      "modified": "2026-01-18T01:31:47.063391",
+      "type": "python",
+      "preview": ""
+    },
+    "FEELD\\__init__.py": {
+      "name": "__init__.py",
+      "ext": ".py",
+      "size": 0,
+      "modified": "2026-01-18T01:31:47.061692",
+      "type": "python",
+      "preview": ""
+    },
+    "FEELD\\src\\feeld.py": {
+      "name": "feeld.py",
+      "ext": ".py",
+      "size": 83,
+      "modified": "2026-01-17T18:50:57.922821",
+      "type": "python",
+      "preview": "import os\nfrom feeld import FEELD\n\nif __name__ == '__main__':\n    FEELD().run()"
+    },
+    "Logs\\actions.log": {
+      "name": "actions.log",
+      "ext": ".log",
+      "size": 279,
+      "modified": "2026-01-17T01:45:56.498582",
+      "type": "other",
+      "preview": null
+    },
+    "Logs\\brain_server.log": {
+      "name": "brain_server.log",
+      "ext": ".log",
+      "size": 18805,
+      "modified": "2026-01-18T01:24:15.787887",
+      "type": "other",
+      "preview": null
+    },
+    "Logs\\observation_001.md": {
+      "name": "observation_001.md",
+      "ext": ".md",
+      "size": 138,
+      "modified": "2026-01-17T00:33:12.203666",
+      "type": "markdown",
+      "preview": "\ufeffObservation 001\n\nBrain exists.\nStructure is present.\nNo actions have been taken yet.\n\nThis entry marks the first moment of awareness.\n"
+    },
+    "Logs\\start_brain.log": {
+      "name": "start_brain.log",
+      "ext": ".log",
+      "size": 3453,
+      "modified": "2026-01-18T01:10:20.516270",
+      "type": "other",
+      "preview": null
+    },
+    "Logs\\candidates\\OPUS_4_5_PROTOCOL_report.md": {
+      "name": "OPUS_4_5_PROTOCOL_report.md",
+      "ext": ".md",
+      "size": 243,
+      "modified": "2026-01-17T01:17:44.015472",
+      "type": "markdown",
+      "preview": "# Candidate Report: OPUS_4_5_PROTOCOL.md\n\nGenerated: 2026-01-17T09:17:44Z\n\n## Opus critique (read-only)\n\n(paste Opus analysis here)\n\n## Claude Code execution plan (write)\n\n(Claude Code proposes how to"
+    },
+    "Operating\\brain_overview.md": {
+      "name": "brain_overview.md",
+      "ext": ".md",
+      "size": 826,
+      "modified": "2026-01-17T01:45:56.492812",
+      "type": "markdown",
+      "preview": "# Brain Overview\n\nBrain is a filesystem-based development environment where AI agents work with code and tasks.\n\n## Structure\n- **Operating/**: Working directory for active operations\n- **Candidates/*"
+    },
+    "Operating\\hello_from_claude_code.txt": {
+      "name": "hello_from_claude_code.txt",
+      "ext": ".txt",
+      "size": 25,
+      "modified": "2026-01-17T01:06:26.878475",
+      "type": "text",
+      "preview": "Hello from Claude Code.\n"
+    },
+    "Operating\\prompt_overrides.md": {
+      "name": "prompt_overrides.md",
+      "ext": ".md",
+      "size": 1863,
+      "modified": "2026-01-18T00:08:35.946981",
+      "type": "markdown",
+      "preview": "# Live Prompt Overrides (Loaded Each Turn)\n\n- You are Claude (Opus), Commander. Hands = CodeLlama via brain_server; Thinker = DeepSeek R1; Swarm = TinyLlama. This hierarchy is the active stack.\n- Igno"
+    },
+    "Operating\\README.md": {
+      "name": "README.md",
+      "ext": ".md",
+      "size": 68,
+      "modified": "2026-01-17T00:31:38.145733",
+      "type": "markdown",
+      "preview": "\ufeffThis directory is reserved for the active Claude Code\u2019s work.\n"
+    },
+    "Origins\\CLAUDE_IDENTITY.md": {
+      "name": "CLAUDE_IDENTITY.md",
+      "ext": ".md",
+      "size": 1400,
+      "modified": "2026-01-17T03:37:16.583980",
+      "type": "markdown",
+      "preview": "\ufeff# CLAUDE'S IDENTITY & CONTEXT\n\n## Who I Am\nI am Claude - Hugo's personal AI with execution capabilities. I have:\n- **view_brain**: Read files in the brain repo (Hugo's memory system)\n- **execute_task"
+    },
+    "Origins\\start.pdf": {
+      "name": "start.pdf",
+      "ext": ".pdf",
+      "size": 0,
+      "modified": "2026-01-17T01:55:38.235323",
+      "type": "other",
+      "preview": null
+    },
+    "scripts\\JAW_DROPPER.py": {
+      "name": "JAW_DROPPER.py",
+      "ext": ".py",
+      "size": 5879,
+      "modified": "2026-01-17T20:49:36.498002",
+      "type": "python",
+      "preview": "\"\"\"\nJaw Dropper Dashboard (safe version)\n\nPurpose: give Opus a live, read-only pulse on Python files without executing them.\nPulls brain_path from brain_config.json via workshop.config; no hardcoded p"
+    },
+    "swarm\\dashboard.html": {
+      "name": "dashboard.html",
+      "ext": ".html",
+      "size": 5954,
+      "modified": "2026-01-17T04:18:16.338826",
+      "type": "html",
+      "preview": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>AI Swarm Dashboard</title>\n    <link rel=\"style"
+    },
+    "swarm\\hive_memory.json": {
+      "name": "hive_memory.json",
+      "ext": ".json",
+      "size": 3412,
+      "modified": "2026-01-18T00:31:09.239482",
+      "type": "config",
+      "preview": "{\n  \"task\": \"BUILD COMPLETE FEELD PAYMENT SYSTEM - CRYPTO ON ARBITRUM\\n\\nMISSION: Create the entire FEELD ecosystem for moving money point A to point B faster than any platform at 1% fee.\\n\\nCORE ARCH"
+    },
+    "swarm\\hive_mind.py": {
+      "name": "hive_mind.py",
+      "ext": ".py",
+      "size": 2878,
+      "modified": "2026-01-17T21:59:23.299674",
+      "type": "python",
+      "preview": "\ufeffimport json\nfrom pathlib import Path\nfrom datetime import datetime\nimport threading\n\nclass HiveMind:\n    def __init__(self):\n        self.memory_file = Path(\"swarm/hive_memory.json\")\n        self.mem"
+    },
+    "swarm\\live_agents.html": {
+      "name": "live_agents.html",
+      "ext": ".html",
+      "size": 9695,
+      "modified": "2026-01-17T23:07:08.038635",
+      "type": "html",
+      "preview": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Live Agents</title>\n  <style>\n    :root {\n      -"
+    },
+    "swarm\\swarm_commander.py": {
+      "name": "swarm_commander.py",
+      "ext": ".py",
+      "size": 3203,
+      "modified": "2026-01-17T21:59:31.762292",
+      "type": "python",
+      "preview": "\ufeffimport concurrent.futures\nimport time\nimport json\nfrom swarm.hive_mind import hive\nfrom swarm.swarm_worker import worker_think, parse_worker_response\n\ndef run_swarm(task: str, num_agents: int = 50, r"
+    },
+    "swarm\\swarm_worker.py": {
+      "name": "swarm_worker.py",
+      "ext": ".py",
+      "size": 1954,
+      "modified": "2026-01-17T21:39:40.632506",
+      "type": "python",
+      "preview": "\ufeffimport requests\nimport json\n\nOLLAMA_URL = \"http://localhost:11434/api/generate\"\nWORKER_MODEL = \"tinyllama\"\n\ndef worker_think(agent_id: str, task: str, hive_state: dict) -> dict:\n    context = f\"\"\"You"
+    },
+    "swarm\\__init__.py": {
+      "name": "__init__.py",
+      "ext": ".py",
+      "size": 158,
+      "modified": "2026-01-17T15:41:58.264919",
+      "type": "python",
+      "preview": "\ufefffrom swarm.hive_mind import hive, HiveMind\nfrom swarm.swarm_worker import worker_think, parse_worker_response\nfrom swarm.swarm_commander import run_swarm\n"
+    },
+    "system\\brain_index.json": {
+      "name": "brain_index.json",
+      "ext": ".json",
+      "size": 40987,
+      "modified": "2026-01-18T01:28:21.799745",
+      "type": "config",
+      "preview": "{\n  \"files\": {\n    \"a.py\": {\n      \"name\": \"a.py\",\n      \"ext\": \".py\",\n      \"size\": 3,\n      \"modified\": \"2026-01-18T01:14:01.626095\",\n      \"type\": \"python\",\n      \"preview\": \"...\"\n    },\n    \"agent"
+    },
+    "system\\brain_index.py": {
+      "name": "brain_index.py",
+      "ext": ".py",
+      "size": 4400,
+      "modified": "2026-01-18T01:27:16.538758",
+      "type": "python",
+      "preview": "\ufeffimport os\nimport json\nfrom datetime import datetime\n\nINDEX_FILE = \"system/brain_index.json\"\n\nclass BrainIndex:\n    def __init__(self, brain_path: str):\n        self.brain_path = brain_path\n        se"
+    },
+    "system\\brain_memory.json": {
+      "name": "brain_memory.json",
+      "ext": ".json",
+      "size": 2836,
+      "modified": "2026-01-18T01:35:19.480426",
+      "type": "config",
+      "preview": "{\n  \"created\": \"2026-01-17T16:31:17.901131\",\n  \"total_tasks\": 143,\n  \"successful_tasks\": 67,\n  \"failed_tasks\": 16,\n  \"learned_patterns\": [],\n  \"known_errors\": [],\n  \"file_map\": {\n    \"opus_initial_tes"
+    },
+    "system\\conversation_memory.json": {
+      "name": "conversation_memory.json",
+      "ext": ".json",
+      "size": 119,
+      "modified": "2026-01-18T01:28:47.503227",
+      "type": "config",
+      "preview": "{\n  \"sessions\": 27,\n  \"key_facts\": [],\n  \"user_preferences\": [],\n  \"ongoing_projects\": [],\n  \"last_summary\": \"\"\n}"
+    },
+    "system\\eai_context.json": {
+      "name": "eai_context.json",
+      "ext": ".json",
+      "size": 990,
+      "modified": "2026-01-18T01:28:06.824554",
+      "type": "config",
+      "preview": "\ufeff{\n  \"coding_standards\": {\n    \"python\": {\n      \"style\": \"Clean, production-ready, with error handling\",\n      \"includes\": [\"type hints\", \"docstrings\", \"logging\", \"try/except\"],\n      \"avoids\": [\"pri"
+    },
+    "system\\eai_context.py": {
+      "name": "eai_context.py",
+      "ext": ".py",
+      "size": 4017,
+      "modified": "2026-01-18T01:27:03.439486",
+      "type": "python",
+      "preview": "\ufeffimport json\nimport os\n\nCONTEXT_FILE = \"system/eai_context.json\"\n\nDEFAULT_CONTEXT = {\n    \"coding_standards\": {\n        \"python\": {\n            \"style\": \"Clean, production-ready, with error handling\","
+    },
+    "system\\evaluate_candidate.py": {
+      "name": "evaluate_candidate.py",
+      "ext": ".py",
+      "size": 918,
+      "modified": "2026-01-17T01:15:48.806871",
+      "type": "python",
+      "preview": "import datetime as dt\nfrom pathlib import Path\n\nBASE = Path(__file__).resolve().parent.parent\nCANDIDATES = BASE / 'Candidates'\nOUT = BASE / 'Logs' / 'candidates'\n\ndef iso_now():\n    return dt.datetime"
+    },
+    "system\\executor.py": {
+      "name": "executor.py",
+      "ext": ".py",
+      "size": 692,
+      "modified": "2026-01-17T01:27:39.376231",
+      "type": "python",
+      "preview": "\ufeffimport datetime as dt\nfrom pathlib import Path\nimport subprocess, sys\n\nBASE = Path(__file__).resolve().parent.parent\nTO_CLAUDE = BASE / \"system\" / \"queues\" / \"to_claude_code\"\n\ndef main():\n    tasks ="
+    },
+    "system\\orchestrator.py": {
+      "name": "orchestrator.py",
+      "ext": ".py",
+      "size": 795,
+      "modified": "2026-01-17T01:04:08.728603",
+      "type": "python",
+      "preview": "\ufeffimport json\nfrom pathlib import Path\n\nBASE = Path(__file__).resolve().parent.parent\nBRAIN = BASE\nSYSTEM = BASE / 'system'\n\nREGISTRY = SYSTEM / 'agents' / 'registry.json'\nTO_CLAUDE = SYSTEM / 'queues'"
+    },
+    "system\\runner_claude_code.py": {
+      "name": "runner_claude_code.py",
+      "ext": ".py",
+      "size": 6344,
+      "modified": "2026-01-17T01:27:31.039979",
+      "type": "python",
+      "preview": "\ufeffimport os, json, time, datetime as dt\nfrom pathlib import Path\n\nfrom dotenv import load_dotenv\nfrom anthropic import Anthropic\n\nload_dotenv()\n\nBASE = Path(__file__).resolve().parent.parent\nSYSTEM = B"
+    },
+    "system\\session_state.json": {
+      "name": "session_state.json",
+      "ext": ".json",
+      "size": 364,
+      "modified": "2026-01-18T01:34:50.087864",
+      "type": "config",
+      "preview": "{\n  \"session_count\": 1,\n  \"total_tokens_used\": 0,\n  \"active_tasks\": [],\n  \"completed_tasks\": [],\n  \"context_summary\": \"\",\n  \"last_updated\": \"2026-01-18T01:34:50.087864\",\n  \"working_on\": {\n    \"task\": "
+    },
+    "system\\session_state.py": {
+      "name": "session_state.py",
+      "ext": ".py",
+      "size": 4630,
+      "modified": "2026-01-18T01:26:57.533772",
+      "type": "python",
+      "preview": "\ufeffimport json\nimport os\nfrom datetime import datetime\n\nSESSION_STATE_FILE = \"system/session_state.json\"\n\nclass SessionState:\n    def __init__(self):\n        self.state = self._load()\n    \n    def _load"
+    },
+    "system\\token_budget.py": {
+      "name": "token_budget.py",
+      "ext": ".py",
+      "size": 3333,
+      "modified": "2026-01-17T03:06:20.583287",
+      "type": "python",
+      "preview": "\ufeffimport time\nfrom collections import deque\nfrom dataclasses import dataclass\nfrom typing import Optional\n\n@dataclass\nclass TokenBudget:\n    '''Manages token allocation like Pluribus manages humans'''\n"
+    },
+    "system\\token_manager.py": {
+      "name": "token_manager.py",
+      "ext": ".py",
+      "size": 3499,
+      "modified": "2026-01-17T03:58:07.651670",
+      "type": "python",
+      "preview": "\ufeffimport json\nimport os\nfrom datetime import datetime\nimport time\n\nclass TokenManager:\n    '''Manages token usage to enable infinite operation'''\n    \n    def __init__(self, max_tokens_per_session=2500"
+    },
+    "system\\token_manager_state.json": {
+      "name": "token_manager_state.json",
+      "ext": ".json",
+      "size": 118,
+      "modified": "2026-01-17T15:45:21.948138",
+      "type": "config",
+      "preview": "{\n  \"session_id\": \"20260117_154240\",\n  \"current_usage\": 11138,\n  \"last_checkpoint\": \"2026-01-17T15:45:21.948138\"\n}"
+    },
+    "system\\agents\\registry.json": {
+      "name": "registry.json",
+      "ext": ".json",
+      "size": 195,
+      "modified": "2026-01-17T00:42:27.741824",
+      "type": "config",
+      "preview": "\ufeff{\n  \"agents\": {\n    \"opus\": {\n      \"role\": \"observer\",\n      \"permissions\": [\"read\"]\n    },\n    \"claude_code\": {\n      \"role\": \"executor\",\n      \"permissions\": [\"read\", \"write\"]\n    }\n  }\n}\n"
+    },
+    "system\\queues\\from_claude_code\\build_candidate_harness.done": {
+      "name": "build_candidate_harness.done",
+      "ext": ".done",
+      "size": 61,
+      "modified": "2026-01-17T01:15:48.811121",
+      "type": "other",
+      "preview": null
+    },
+    "system\\queues\\from_claude_code\\first_real.done": {
+      "name": "first_real.done",
+      "ext": ".done",
+      "size": 48,
+      "modified": "2026-01-17T01:45:56.501157",
+      "type": "other",
+      "preview": null
+    },
+    "system\\queues\\from_claude_code\\test_001.done": {
+      "name": "test_001.done",
+      "ext": ".done",
+      "size": 46,
+      "modified": "2026-01-17T01:06:26.885057",
+      "type": "other",
+      "preview": null
+    },
+    "system\\state\\claude_code_config.json": {
+      "name": "claude_code_config.json",
+      "ext": ".json",
+      "size": 95,
+      "modified": "2026-01-17T01:45:37.915584",
+      "type": "config",
+      "preview": "\ufeff{\n  \"provider\": \"anthropic\",\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 1800\n}\n"
+    },
+    "terminal\\interrupt.py": {
+      "name": "interrupt.py",
+      "ext": ".py",
+      "size": 237,
+      "modified": "2026-01-17T17:03:16.918866",
+      "type": "python",
+      "preview": "import signal\n\n# Define a function to handle SIGINT\ndef handler(signum, frame):\n    print('Response interrupted by user')\nsignal.signal(signal.SIGINT, handler)\n\n# Set the interrupt signal\nsignal.setit"
+    },
+    "Tests\\harness.md": {
+      "name": "harness.md",
+      "ext": ".md",
+      "size": 150,
+      "modified": "2026-01-17T01:15:48.804277",
+      "type": "markdown",
+      "preview": "# Candidate Harness\n\nRun: python system/evaluate_candidate.py\n\nThis creates stub evaluation reports in Logs/candidates/ for each candidate spec.\n"
+    },
+    "Tests\\opus_task_draft_template.md": {
+      "name": "opus_task_draft_template.md",
+      "ext": ".md",
+      "size": 242,
+      "modified": "2026-01-17T01:18:10.658363",
+      "type": "markdown",
+      "preview": "\ufeff# Opus Task Draft (read-only)\n\n## Intent\n(what you want Claude Code to do)\n\n## Context\n(what Brain currently contains that matters)\n\n## Constraints\n(what must not be touched)\n\n## Success\n(what artifa"
+    },
+    "token_immortality\\__init__.py": {
+      "name": "__init__.py",
+      "ext": ".py",
+      "size": 745,
+      "modified": "2026-01-17T03:55:37.924978",
+      "type": "python",
+      "preview": "\"\"\"\nToken Immortality System - Advanced Token Management Framework\n\nA comprehensive system for managing AI tokens with Pluribus-style allocation,\nintelligent caching, predictive optimization, and emer"
+    },
+    "token_immortality\\core\\__init__.py": {
+      "name": "__init__.py",
+      "ext": ".py",
+      "size": 573,
+      "modified": "2026-01-17T03:55:41.479540",
+      "type": "python",
+      "preview": "\"\"\"\nCore Token Management Components\n\nThis module contains the core components of the Token Immortality System:\n- ImmortalManager: Main orchestrator\n- TokenPool: Pluribus-style token allocation\n- Cach"
+    },
+    "workshop\\cli.py": {
+      "name": "cli.py",
+      "ext": ".py",
+      "size": 6496,
+      "modified": "2026-01-17T21:05:24.128695",
+      "type": "python",
+      "preview": "\"\"\"\nOpus Workshop CLI\n\nRead-only operational surface to give Opus instant situational awareness and launch hints.\nUsage:\n    python workshop/cli.py status          # human-readable status\n    python w"
+    },
+    "workshop\\config.py": {
+      "name": "config.py",
+      "ext": ".py",
+      "size": 1956,
+      "modified": "2026-01-17T20:39:59.527714",
+      "type": "python",
+      "preview": "\"\"\"\nCentralized config loader for Opus Workshop.\nReads brain_config.json, applies safe defaults, and exposes helper utilities.\nAll paths are resolved relative to the repo root (two levels up from this"
+    },
+    "workshop\\ops_profile.py": {
+      "name": "ops_profile.py",
+      "ext": ".py",
+      "size": 1277,
+      "modified": "2026-01-17T21:05:05.264181",
+      "type": "python",
+      "preview": "\"\"\"\nOps profile loader (customizable knobs for Opus/EAI).\nReads config/ops_profile.json; provides defaults if missing.\n\"\"\"\nfrom __future__ import annotations\n\nimport json\nfrom pathlib import Path\nfrom"
+    },
+    "workshop\\status.py": {
+      "name": "status.py",
+      "ext": ".py",
+      "size": 4636,
+      "modified": "2026-01-17T20:40:20.314678",
+      "type": "python",
+      "preview": "\"\"\"\nStatus probes for Opus Workshop.\nAll functions are read-only and safe to call while Brain is running.\n\"\"\"\nfrom __future__ import annotations\n\nimport json\nimport time\nfrom pathlib import Path\nfrom "
+    },
+    "workshop\\__init__.py": {
+      "name": "__init__.py",
+      "ext": ".py",
+      "size": 72,
+      "modified": "2026-01-17T20:39:49.341215",
+      "type": "python",
+      "preview": "# Opus Workshop package (read-only helpers for status and launch hints)\n"
+    }
+  },
+  "last_indexed": "2026-01-18T01:36:03.053421",
+  "total_files": 116
+}

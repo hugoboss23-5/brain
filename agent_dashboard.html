@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FEELD AI Army Command Center</title>
+    <style>
+        body { font-family: monospace; background: #000; color: #00ff00; }
+        .agent { border: 1px solid #00ff00; margin: 10px; padding: 15px; }
+        .working { border-color: #ff6600; }
+        .ready { border-color: #00ff00; }
+        .completed { border-color: #0066ff; }
+        .header { font-size: 24px; text-align: center; }
+        .stats { display: flex; justify-content: space-around; }
+    </style>
+</head>
+<body>
+    <div class="header">&#x1f469;&#x1f4bb; HUGO'S AI ARMY - COMMAND CENTER &#x1f469;&#x1f4bb;</div>
+    <div class="stats">
+        <div>Agents Active: <span id="active">0</span></div>
+        <div>Tasks Completed: <span id="completed">0</span></div>
+        <div>System Status: <span id="status">OPERATIONAL</span></div>
+    </div>
+    <div id="agents"></div>
+
+    <script>
+        // Auto-refresh every 5 seconds
+        setInterval(updateDashboard, 5000);
+
+        function updateDashboard() {
+            document.getElementById('status').innerHTML = 'SCANNING...';
+            setTimeout(() => {
+                document.getElementById('status').innerHTML = 'OPERATIONAL';
+            }, 1000);
+        }
+    </script>
+</body>
+</html>

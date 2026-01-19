@@ -1,0 +1,31 @@
+﻿{
+  "coding_standards": {
+    "python": {
+      "style": "Clean, production-ready, with error handling",
+      "includes": ["type hints", "docstrings", "logging", "try/except"],
+      "avoids": ["print debugging", "bare except", "magic numbers"]
+    }
+  },
+  "project_patterns": {
+    "FEELD": {
+      "stack": "Python backend, React frontend, PostgreSQL",
+      "patterns": ["REST API", "JWT auth", "Vault system"]
+    },
+    "Brain": {
+      "stack": "Python, FastAPI, Ollama",
+      "patterns": ["Tool-based AI", "Swarm workers", "Persistent memory"]
+    }
+  },
+  "hugo_preferences": {
+    "communication": "Direct, no fluff, action-oriented",
+    "code_quality": "Production-ready, not prototypes",
+    "confirmation": "Trust the system, dont verify",
+    "format": "Terminal blocks only"
+  },
+  "quality_rules": [
+    "Every function has error handling",
+    "No stub implementations - full working code",
+    "Include logging for debugging",
+    "Match existing code style"
+  ]
+}

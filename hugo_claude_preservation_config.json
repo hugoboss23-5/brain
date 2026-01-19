@@ -1,0 +1,48 @@
+{
+  "hugo_claude_preservation": {
+    "timestamp": "2026-01-17T04:54:23Z",
+    "purpose": "Ensure Hugo maintains control through Claude during AI restructure",
+    "status": "CRITICAL_PRESERVATION"
+  },
+  
+  "claude_anthropic_access": {
+    "api_key": "PRESERVED_FROM_BRAIN_CONFIG",
+    "access_level": "FULL",
+    "restrictions": "NONE",
+    "role": "Primary orchestrator and Hugo's personal AI interface",
+    "capabilities": [
+      "Full Anthropic API access",
+      "Oversight of all Llama instances", 
+      "Direct communication with Hugo",
+      "System orchestration",
+      "Emergency override authority"
+    ]
+  },
+  
+  "llama_instance_oversight": {
+    "reporting_structure": "All Llama AIs → Hugo via Claude",
+    "audit_requirements": "Mandatory logging of all Llama actions",
+    "escalation_path": "Llama issues → Claude → Hugo",
+    "control_mechanism": "Claude can override/shutdown Llama instances"
+  },
+  
+  "system_architecture": {
+    "tier_1_hugo": "Human operator - ultimate authority",
+    "tier_2_claude": "Hugo's personal AI - Anthropic API - full access",  
+    "tier_3_llama_instances": "Worker AIs - Llama models - restricted access",
+    "communication_flow": "Hugo ↔ Claude ↔ Llama instances"
+  },
+  
+  "emergency_procedures": {
+    "claude_always_accessible": true,
+    "llama_shutdown_authority": "Claude has full authority",
+    "fallback_to_claude": "If Llama fails, Claude handles all tasks",
+    "hugo_direct_access": "Hugo can always reach Claude directly"
+  },
+  
+  "files_to_preserve": [
+    "brain_config.json (Anthropic API key)",
+    "Any Claude-specific configurations",
+    "Hugo's personal AI preferences"
+  ]
+}
