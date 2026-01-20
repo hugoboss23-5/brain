@@ -1,4 +1,5 @@
 import anthropic
+from openai import OpenAI
 import json
 import requests
 from rich.console import Console
@@ -22,7 +23,19 @@ opus_memory = get_memory()
 with open('brain_config.json', 'r') as f:
     config = json.load(f)
 
-client = anthropic.Anthropic(api_key=config['anthropic_api_key'])
+# DeepSeek V3 as the main commander (cheaper, faster, no credit issues)
+# Uses OpenAI-compatible API
+deepseek_client = OpenAI(
+    api_key=config.get('deepseek_api_key', config.get('anthropic_api_key')),
+    base_url="https://api.deepseek.com"
+)
+
+# Keep Anthropic as fallback if needed
+try:
+    anthropic_client = anthropic.Anthropic(api_key=config.get('anthropic_api_key', ''))
+except:
+    anthropic_client = None
+
 brain_url = f"http://127.0.0.1:{config['server_port']}"
 
 # JARVIS MODE - Execute silently, report results only, no narration
@@ -1067,13 +1080,13 @@ def dispatch_tool(name, inputs):
 
 BRAIN_IDENTITY = '''
 ## WHO YOU ARE
-You are Opus inside Hugo's Brain system - a multi-model AI architecture.
+You are DeepSeek V3 inside Hugo's Brain system - a multi-model AI architecture.
 
-**Your Role: STRATEGIST** - Commander and orchestrator.
+**Your Role: COMMANDER** - Strategist and orchestrator.
 **Hierarchy:**
-- **OPUS (You)**: Commander
-- **CodeLlama (EAI)**: File ops, patches, commands
-- **DeepSeek R1**: Planning/diagnosis ONLY (max 2 calls)
+- **DEEPSEEK V3 (You)**: Commander - planning, reasoning, orchestration
+- **CodeLlama (EAI)**: File ops, patches, commands (local)
+- **DeepSeek R1**: Deep reasoning (local, max 2 calls)
 - **TinyLlama x8**: Parallel tasks (8 concurrent max)
 
 ## COMPUTE EFFICIENCY (ACTIVE)
@@ -1205,35 +1218,142 @@ BUDGET REMAINING: {budget_str}
 Execute. Report. Stop when done.'''
 
 # =============================================================================
-# CLAUDE API CALLER
+# DEEPSEEK V3 API CALLER (OpenAI-compatible)
 # =============================================================================
 
-def call_claude(messages, tools=None, system_prompt=None):
+def convert_tools_to_openai_format(tools):
+    """Convert Anthropic tool format to OpenAI function format"""
+    if not tools:
+        return None
+    openai_tools = []
+    for tool in tools:
+        openai_tools.append({
+            "type": "function",
+            "function": {
+                "name": tool['name'],
+                "description": tool['description'],
+                "parameters": tool['input_schema']
+            }
+        })
+    return openai_tools
+
+def convert_messages_for_deepseek(messages, system_prompt):
+    """Convert message format for DeepSeek (OpenAI-compatible)"""
+    converted = []
+    if system_prompt:
+        converted.append({"role": "system", "content": system_prompt})
+
+    for msg in messages:
+        if msg['role'] == 'user':
+            # Handle tool results
+            if isinstance(msg.get('content'), list):
+                # Tool results - convert to assistant message format
+                tool_results = []
+                for item in msg['content']:
+                    if item.get('type') == 'tool_result':
+                        tool_results.append(f"[Tool Result {item.get('tool_use_id', '')}]: {item.get('content', '')}")
+                if tool_results:
+                    converted.append({"role": "user", "content": "\n".join(tool_results)})
+            else:
+                converted.append({"role": "user", "content": msg['content']})
+        elif msg['role'] == 'assistant':
+            # Handle assistant messages with tool calls
+            if hasattr(msg.get('content'), '__iter__') and not isinstance(msg.get('content'), str):
+                text_parts = []
+                for block in msg['content']:
+                    if hasattr(block, 'type'):
+                        if block.type == 'text':
+                            text_parts.append(block.text)
+                        elif block.type == 'tool_use':
+                            text_parts.append(f"[Calling {block.name}: {json.dumps(block.input)}]")
+                if text_parts:
+                    converted.append({"role": "assistant", "content": "\n".join(text_parts)})
+            else:
+                converted.append({"role": "assistant", "content": str(msg.get('content', ''))})
+
+    return converted
+
+class DeepSeekResponse:
+    """Wrapper to make DeepSeek response look like Anthropic response"""
+    def __init__(self, openai_response):
+        self.raw = openai_response
+        self.stop_reason = 'end_turn'
+        self.content = []
+
+        # Parse the response
+        choice = openai_response.choices[0] if openai_response.choices else None
+        if choice:
+            # Check for tool calls
+            if choice.message.tool_calls:
+                self.stop_reason = 'tool_use'
+                for tc in choice.message.tool_calls:
+                    self.content.append(ToolUseBlock(
+                        id=tc.id,
+                        name=tc.function.name,
+                        input=json.loads(tc.function.arguments) if tc.function.arguments else {}
+                    ))
+
+            # Add text content
+            if choice.message.content:
+                self.content.append(TextBlock(text=choice.message.content))
+
+            # Check finish reason
+            if choice.finish_reason == 'tool_calls':
+                self.stop_reason = 'tool_use'
+
+        # Usage tracking
+        self.usage = type('Usage', (), {
+            'input_tokens': openai_response.usage.prompt_tokens if openai_response.usage else 0,
+            'output_tokens': openai_response.usage.completion_tokens if openai_response.usage else 0
+        })()
+
+class TextBlock:
+    def __init__(self, text):
+        self.type = 'text'
+        self.text = text
+
+class ToolUseBlock:
+    def __init__(self, id, name, input):
+        self.type = 'tool_use'
+        self.id = id
+        self.name = name
+        self.input = input
+
+def call_deepseek(messages, tools=None, system_prompt=None):
+    """Call DeepSeek V3 API (main commander)"""
     for attempt in range(3):
         try:
+            # Convert formats
+            converted_messages = convert_messages_for_deepseek(messages, system_prompt or get_system_prompt())
+            openai_tools = convert_tools_to_openai_format(tools)
+
             params = {
-                'model': 'claude-sonnet-4-20250514',
+                'model': 'deepseek-chat',  # DeepSeek V3
                 'max_tokens': 8000,
-                'system': system_prompt or get_system_prompt(),
-                'messages': messages
+                'messages': converted_messages,
             }
-            if tools:
-                params['tools'] = tools
-            return client.messages.create(**params), None
-        except anthropic.BadRequestError as e:
-            if attempt < 2:
-                messages = [m for m in messages if m.get('content')]
-                continue
-            return None, str(e)
-        except anthropic.RateLimitError:
-            console.print(f'[yellow]Rate limited, waiting 30s...[/yellow]')
-            time.sleep(30)
+            if openai_tools:
+                params['tools'] = openai_tools
+                params['tool_choice'] = 'auto'
+
+            response = deepseek_client.chat.completions.create(**params)
+            return DeepSeekResponse(response), None
+
         except Exception as e:
-            if attempt < 2:
+            error_str = str(e)
+            if 'rate_limit' in error_str.lower():
+                console.print(f'[yellow]Rate limited, waiting 10s...[/yellow]')
+                time.sleep(10)
+            elif attempt < 2:
                 time.sleep(2)
                 continue
-            return None, str(e)
+            else:
+                return None, error_str
+
     return None, 'Max retries'
+
+# Alias for compatibility
+call_claude = call_deepseek
 
 # =============================================================================
 # MAIN CHAT LOOP
@@ -1268,9 +1388,9 @@ def chat():
 
     cache_stats = fingerprint_cache.get_stats()
     console.print(Panel.fit(
-        f'[bold green]👑 OPUS[/bold green] Commander\n'
-        f'[bold cyan]🤖 EAI[/bold cyan] CodeLlama (file ops)\n'
-        f'[bold blue]🧠 THINKER[/bold blue] DeepSeek R1 (max 2/task)\n'
+        f'[bold green]👑 DEEPSEEK V3[/bold green] Commander (API)\n'
+        f'[bold cyan]🤖 EAI[/bold cyan] CodeLlama (local)\n'
+        f'[bold blue]🧠 THINKER[/bold blue] DeepSeek R1 (local, max 2)\n'
         f'[bold yellow]🐜 SWARM[/bold yellow] TinyLlama x{COMPUTE_CONFIG["swarm_concurrency"]}\n'
         f'[dim]Session #{convo_memory["sessions"]} | Budget: {COMPUTE_CONFIG["max_tool_calls"]} tools | Cache: {cache_stats["entries"]} ({cache_stats["hit_rate"]} hit)[/dim]\n'
         f'[bold magenta]📚 MEMORY[/bold magenta] [dim]{mem_stats["total_conversations"]} convos | {mem_stats["total_facts"]} facts[/dim]',
@@ -1354,7 +1474,7 @@ def chat():
             for block in response.content:
                 if block.type == 'text' and block.text.strip():
                     response_text = block.text.strip()
-                    console.print(f'[green]Opus:[/green] {block.text}')
+                    console.print(f'[green]Brain:[/green] {block.text}')
                     conversation.append({'role': 'assistant', 'content': response_text})
 
             # Extract knowledge from conversational exchange too
@@ -1376,7 +1496,7 @@ def chat():
             # Print any text before tools
             for block in response.content:
                 if block.type == 'text' and block.text.strip():
-                    console.print(f'[green]Opus:[/green] {block.text}')
+                    console.print(f'[green]Brain:[/green] {block.text}')
 
             # Execute tools and collect results
             tool_results = []
@@ -1552,7 +1672,7 @@ def chat():
         for block in response.content:
             if block.type == 'text' and block.text.strip():
                 final_text += block.text
-                console.print(f'[green]Opus:[/green] {block.text}')
+                console.print(f'[green]Brain:[/green] {block.text}')
 
         if final_text.strip():
             conversation.append({'role': 'assistant', 'content': final_text.strip()})
