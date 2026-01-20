@@ -318,15 +318,43 @@ async def status():
             models = [m['name'] for m in r.json().get('models', [])]
     except:
         ollama_status = "offline"
+
+    # Load recursive memory stats
+    recursive_memory_stats = {}
+    try:
+        from system.recursive_memory import get_memory
+        rmem = get_memory()
+        recursive_memory_stats = rmem.get_full_stats()
+    except:
+        recursive_memory_stats = {"total_conversations": 0, "total_facts": 0, "total_entities": 0}
+
     return {
         'status': 'online',
         'hierarchy': {'commander': 'Opus', 'hands': MODELS['hands'], 'thinker': MODELS['thinker'], 'swarm': MODELS['swarm']},
         'memory': {'tasks': memory['total_tasks'], 'success_rate': f"{(memory['successful_tasks'] / max(memory['total_tasks'], 1)) * 100:.0f}%"},
+        'recursive_memory': recursive_memory_stats,
         'session': {'working_on': session_state.state.get('working_on'), 'cached_dirs': len(session_state.state.get('directory_cache', {}))},
         'ollama': ollama_status,
         'models': models,
-        'endpoints': ['/execute', '/think', '/search', '/reindex', '/view', '/context', '/status']
+        'endpoints': ['/execute', '/think', '/search', '/reindex', '/view', '/context', '/status', '/memory']
     }
+
+@app.get('/memory')
+async def get_recursive_memory():
+    """Get Opus's long-term memory stats (RLM-style)"""
+    try:
+        from system.recursive_memory import get_memory
+        rmem = get_memory()
+        stats = rmem.get_full_stats()
+        return {
+            'status': 'online',
+            'stats': stats,
+            'user_model': rmem.index.get('user_model', {}),
+            'recent_facts': rmem.index.get('facts', [])[-10:],
+            'recent_conversations': rmem.index.get('conversations', [])[-5:]
+        }
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}
 
 if __name__ == '__main__':
     import uvicorn

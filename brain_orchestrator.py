@@ -8,8 +8,16 @@ from datetime import datetime
 import os
 import hashlib
 import re
+import sys
+
+# Add system to path for imports
+sys.path.insert(0, os.getcwd())
+from system.recursive_memory import get_memory
 
 console = Console()
+
+# Initialize Recursive Memory System (RLM-style - remembers EVERYTHING)
+opus_memory = get_memory()
 
 with open('brain_config.json', 'r') as f:
     config = json.load(f)
@@ -452,12 +460,18 @@ When someone asks you to "explain Brain" or "what is Brain" or "tell X about Bra
 # SYSTEM PROMPT
 # =============================================================================
 
-def get_system_prompt(force_conversational=False):
+def get_system_prompt(force_conversational=False, user_query=""):
     mem_context = ""
     if convo_memory.get("key_facts"):
         mem_context = "\n\nREMEMBERED FACTS:\n" + "\n".join(f"- {f}" for f in convo_memory["key_facts"][-10:])
     if convo_memory.get("ongoing_projects"):
         mem_context += "\n\nONGOING PROJECTS:\n" + "\n".join(f"- {p}" for p in convo_memory["ongoing_projects"][-5:])
+
+    # RECURSIVE MEMORY - Load relevant long-term memories
+    if user_query:
+        long_term_memory = opus_memory.get_memory_context_string(user_query)
+        if long_term_memory:
+            mem_context += f"\n\n## LONG-TERM MEMORY (I remember everything):\n{long_term_memory}"
 
     conversational_override = ""
     if force_conversational:
@@ -552,13 +566,16 @@ def chat():
         console.print('[red]Brain server not running! Start with: python brain_server.py[/red]')
         return
 
+    # Load memory stats
+    mem_stats = opus_memory.get_full_stats()
+
     console.print(Panel.fit(
         f'[bold green]👑 OPUS[/bold green] Commander\n'
         f'[bold cyan]🤖 EAI[/bold cyan] CodeLlama (hands)\n'
         f'[bold blue]🧠 THINKER[/bold blue] DeepSeek R1\n'
         f'[bold yellow]🐜 SWARM[/bold yellow] TinyLlama x100\n'
-        f'[dim]Session #{convo_memory["sessions"]} | Memory: {len(convo_memory.get("key_facts", []))} facts[/dim]\n'
-        f'[dim]Tool Guard: max 15 calls, dedup ON, circuit breaker ON[/dim]',
+        f'[dim]Session #{convo_memory["sessions"]} | Tool Guard: max 15 calls[/dim]\n'
+        f'[bold magenta]📚 MEMORY[/bold magenta] [dim]{mem_stats["total_conversations"]} convos | {mem_stats["total_facts"]} facts | {mem_stats["total_entities"]} concepts[/dim]',
         border_style='green'
     ))
     console.print()
@@ -569,7 +586,14 @@ def chat():
         try:
             user_input = console.input('[cyan]Hugo:[/cyan] ').strip()
         except (KeyboardInterrupt, EOFError):
-            console.print('\n[green]Goodbye![/green]')
+            # Archive conversation before exit
+            if conversation:
+                try:
+                    archive_id = opus_memory.archive_conversation(conversation, convo_memory["sessions"])
+                    console.print(f'\n[dim]📚 Conversation archived: {archive_id}[/dim]')
+                except:
+                    pass
+            console.print('[green]Goodbye![/green]')
             break
 
         if not user_input:
@@ -577,8 +601,18 @@ def chat():
 
         if user_input.lower() in ['exit', 'quit', 'bye']:
             save_conversation_memory(convo_memory)
+            # Archive conversation to long-term memory
+            if conversation:
+                try:
+                    archive_id = opus_memory.archive_conversation(conversation, convo_memory["sessions"])
+                    console.print(f'[dim]📚 Conversation archived: {archive_id}[/dim]')
+                except Exception as e:
+                    console.print(f'[dim]   (Archive failed: {e})[/dim]')
+            memory_stats = opus_memory.get_full_stats()
             stats = tracker.get_stats()
-            console.print(f'\n[green]Tokens: {stats["tokens_used"]} | Cost: {stats["estimated_cost"]} | Uptime: {stats["uptime_minutes"]}min[/green]')
+            console.print(f'\n[green]Session complete![/green]')
+            console.print(f'[dim]Tokens: {stats["tokens_used"]} | Cost: {stats["estimated_cost"]} | Uptime: {stats["uptime_minutes"]}min[/dim]')
+            console.print(f'[dim]Memory: {memory_stats["total_conversations"]} convos | {memory_stats["total_facts"]} facts | {memory_stats["total_entities"]} concepts[/dim]')
             break
 
         # Reset tool guard for new user message
@@ -591,16 +625,20 @@ def chat():
         if len(conversation) > 30:
             conversation = conversation[-30:]
 
-        # Use appropriate system prompt and tools
+        # Use appropriate system prompt and tools (with memory context)
         if is_conversational:
             # No tools for conversational queries
             response, error = call_claude(
                 conversation,
                 tools=None,  # Disable tools
-                system_prompt=get_system_prompt(force_conversational=True)
+                system_prompt=get_system_prompt(force_conversational=True, user_query=user_input)
             )
         else:
-            response, error = call_claude(conversation, TOOLS)
+            response, error = call_claude(
+                conversation,
+                TOOLS,
+                system_prompt=get_system_prompt(user_query=user_input)
+            )
 
         if error:
             console.print(f'[red]Error: {error}[/red]')
@@ -612,13 +650,23 @@ def chat():
         # Skip tool loop entirely for conversational mode
         if is_conversational:
             # Just print the response
+            response_text = ""
             for block in response.content:
                 if block.type == 'text' and block.text.strip():
+                    response_text = block.text.strip()
                     console.print(f'[green]Opus:[/green] {block.text}')
-                    conversation.append({'role': 'assistant', 'content': block.text.strip()})
+                    conversation.append({'role': 'assistant', 'content': response_text})
 
+            # Extract knowledge from conversational exchange too
+            if response_text:
+                try:
+                    opus_memory.extract_knowledge(user_input, response_text)
+                except:
+                    pass
+
+            memory_stats = opus_memory.get_full_stats()
             stats = tracker.get_stats()
-            console.print(f'\n[dim](Tokens: {stats["tokens_used"]} | Cost: {stats["estimated_cost"]} | Tools: 0 - conversational)[/dim]\n')
+            console.print(f'\n[dim](Tokens: {stats["tokens_used"]} | Cost: {stats["estimated_cost"]} | Tools: 0 | Memory: {memory_stats["total_facts"]} facts)[/dim]\n')
             continue
 
         # Tool processing loop with guard
@@ -718,9 +766,16 @@ def chat():
         if final_text.strip():
             conversation.append({'role': 'assistant', 'content': final_text.strip()})
 
+            # RECURSIVE MEMORY - Extract and store knowledge from this exchange
+            try:
+                opus_memory.extract_knowledge(user_input, final_text)
+            except Exception as e:
+                console.print(f'[dim]   (Memory extraction: {e})[/dim]')
+
         guard_stats = tool_guard.get_stats()
+        memory_stats = opus_memory.get_full_stats()
         stats = tracker.get_stats()
-        console.print(f'\n[dim](Tokens: {stats["tokens_used"]} | Cost: {stats["estimated_cost"]} | Tools: {guard_stats["total_calls"]}/{tool_guard.max_total_calls})[/dim]\n')
+        console.print(f'\n[dim](Tokens: {stats["tokens_used"]} | Cost: {stats["estimated_cost"]} | Tools: {guard_stats["total_calls"]}/{tool_guard.max_total_calls} | Memory: {memory_stats["total_facts"]} facts)[/dim]\n')
 
 if __name__ == '__main__':
     chat()

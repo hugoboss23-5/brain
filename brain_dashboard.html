@@ -602,6 +602,29 @@
             </div>
         </section>
 
+        <!-- Recursive Memory (RLM) -->
+        <section class="stats-section">
+            <h2 class="section-title">📚 Recursive Memory (RLM)</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="memConvos">0</div>
+                    <div class="stat-label">Conversations</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="memFacts">0</div>
+                    <div class="stat-label">Facts Learned</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="memConcepts">0</div>
+                    <div class="stat-label">Concepts Known</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="memProjects">0</div>
+                    <div class="stat-label">Projects Tracked</div>
+                </div>
+            </div>
+        </section>
+
         <!-- Stats -->
         <section class="stats-section">
             <h2 class="section-title">📊 Performance Stats</h2>
@@ -803,6 +826,14 @@
 
             if (data.session) {
                 document.getElementById('cachedDirs').textContent = data.session.cached_dirs || 0;
+            }
+
+            // Recursive Memory (RLM) stats
+            if (data.recursive_memory) {
+                document.getElementById('memConvos').textContent = data.recursive_memory.total_conversations || 0;
+                document.getElementById('memFacts').textContent = data.recursive_memory.total_facts || 0;
+                document.getElementById('memConcepts').textContent = data.recursive_memory.total_entities || 0;
+                document.getElementById('memProjects').textContent = data.recursive_memory.projects_tracked || 0;
             }
 
             // Last update
