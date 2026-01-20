@@ -25,7 +25,11 @@ with open('brain_config.json', 'r') as f:
 client = anthropic.Anthropic(api_key=config['anthropic_api_key'])
 brain_url = f"http://127.0.0.1:{config['server_port']}"
 
+# JARVIS MODE - Execute silently, report results only, no narration
+JARVIS_MODE = True
+
 CONVO_MEMORY_FILE = "system/conversation_memory.json"
+SWARM_ERROR_LOG = "system/swarm_errors.log"
 
 def load_conversation_memory():
     try:
@@ -94,6 +98,8 @@ class ToolCallGuard:
         self.consecutive_same_tool = 0
         self.last_tool_name = None
         self.blocked_reason = None
+        self.duplicate_attempts = 0  # Track how many duplicates blocked (doesn't count toward limit)
+        self.cached_results = {}     # Store results for instant return on duplicate
 
     def _make_signature(self, tool_name, tool_input):
         """Create unique signature for tool call"""
@@ -118,21 +124,22 @@ class ToolCallGuard:
     def should_allow_call(self, tool_name, tool_input):
         """
         Check if tool call should be allowed.
-        Returns: (allowed: bool, message: str or None)
+        Returns: (allowed: bool, message: str or None, cached_result: dict or None)
         """
         signature = self._make_signature(tool_name, tool_input)
 
-        # Check 1: Total call limit
+        # Check 1: Total call limit (only counts ACTUAL calls, not duplicates)
         if self.total_calls >= self.max_total_calls:
             self.blocked_reason = f"Hit {self.max_total_calls} tool call limit"
             console.print(f'[yellow]   ⚠ CIRCUIT BREAKER: {self.blocked_reason}[/yellow]')
-            return False, f"I've hit my tool call limit ({self.max_total_calls} calls). Let me respond with what I have."
+            return False, f"Tool limit reached. Respond with current information.", None
 
-        # Check 2: Duplicate call detection
+        # Check 2: Duplicate call detection - return cached result, DON'T count toward limit
         if signature in self.recent_signatures:
-            self.blocked_reason = f"Duplicate call: {tool_name}"
-            console.print(f'[yellow]   ⚠ DUPLICATE: Already called {tool_name} with same args[/yellow]')
-            return False, "I already tried that exact call. Let me try something different."
+            self.duplicate_attempts += 1
+            cached = self.cached_results.get(signature)
+            # Silent - don't spam the console
+            return False, None, cached  # Return cached result directly
 
         # Check 3: Consecutive same tool limit
         if tool_name == self.last_tool_name:
@@ -140,14 +147,14 @@ class ToolCallGuard:
             if self.consecutive_same_tool >= self.max_consecutive_same:
                 self.blocked_reason = f"Called {tool_name} {self.max_consecutive_same}x consecutively"
                 console.print(f'[yellow]   ⚠ CIRCUIT BREAKER: {self.blocked_reason}[/yellow]')
-                return False, f"I've called {tool_name} {self.max_consecutive_same} times in a row. Let me use that information to respond."
+                return False, f"Called {tool_name} 3x. Use gathered information now.", None
         else:
             self.consecutive_same_tool = 1
 
-        return True, None
+        return True, None, None
 
     def record_call(self, tool_name, tool_input, result):
-        """Record a tool call after execution"""
+        """Record a tool call after execution and cache result"""
         signature = self._make_signature(tool_name, tool_input)
         result_hash = self._hash_result(result)
 
@@ -156,10 +163,13 @@ class ToolCallGuard:
         if len(self.recent_signatures) > self.max_recent_signatures:
             self.recent_signatures.pop(0)
 
+        # Cache result for instant return on duplicate attempts
+        self.cached_results[signature] = result
+
         # Check for identical result to previous call of same tool
         if signature in self.result_hashes:
             if self.result_hashes[signature] == result_hash:
-                console.print(f'[yellow]   ⚠ Same result as before - tool output unchanged[/yellow]')
+                pass  # Silent - no spam
 
         self.result_hashes[signature] = result_hash
         self.total_calls += 1
@@ -174,7 +184,8 @@ class ToolCallGuard:
         return {
             'total_calls': self.total_calls,
             'unique_signatures': len(set(self.recent_signatures)),
-            'blocked_reason': self.blocked_reason
+            'blocked_reason': self.blocked_reason,
+            'duplicate_attempts': self.duplicate_attempts
         }
 
 # Global guard instance
@@ -388,6 +399,17 @@ def reindex_brain():
     except Exception as e:
         return {'error': str(e)}
 
+def log_swarm_error(error_type, error_msg, task_description):
+    """Log swarm errors to file for debugging"""
+    try:
+        os.makedirs(os.path.dirname(SWARM_ERROR_LOG), exist_ok=True)
+        with open(SWARM_ERROR_LOG, 'a', encoding='utf-8') as f:
+            timestamp = datetime.now().isoformat()
+            f.write(f"[{timestamp}] {error_type}: {error_msg}\n")
+            f.write(f"  Task: {task_description[:100]}...\n\n")
+    except:
+        pass
+
 def pluribus_swarm(task_description, num_agents=50, rounds=2):
     """Deploy TinyLlama swarm for parallel tasks"""
     try:
@@ -400,9 +422,31 @@ def pluribus_swarm(task_description, num_agents=50, rounds=2):
         result = r.json()
         if result.get('consensus'):
             console.print(f'[magenta]   ✓ Swarm consensus reached[/magenta]')
+        elif result.get('error'):
+            error_msg = result.get('error')
+            console.print(f'[red]   ✗ Swarm error: {error_msg}[/red]')
+            log_swarm_error('SERVER_ERROR', error_msg, task_description)
         return result
+    except requests.exceptions.Timeout:
+        error_msg = 'SWARM_TIMEOUT: Swarm took too long (>600s). Try fewer agents or simpler task.'
+        console.print(f'[red]   ✗ {error_msg}[/red]')
+        log_swarm_error('TIMEOUT', error_msg, task_description)
+        return {'error': error_msg, 'suggestion': 'Reduce num_agents or simplify task'}
+    except requests.exceptions.ConnectionError:
+        error_msg = 'SWARM_OFFLINE: Cannot reach Brain server. Is brain_server.py running?'
+        console.print(f'[red]   ✗ {error_msg}[/red]')
+        log_swarm_error('CONNECTION_ERROR', error_msg, task_description)
+        return {'error': error_msg, 'suggestion': 'Start brain_server.py'}
+    except requests.exceptions.ConnectionRefusedError:
+        error_msg = 'SWARM_REFUSED: Server refused connection. Server may be overloaded.'
+        console.print(f'[red]   ✗ {error_msg}[/red]')
+        log_swarm_error('CONNECTION_REFUSED', error_msg, task_description)
+        return {'error': error_msg, 'suggestion': 'Wait and retry, or restart server'}
     except Exception as e:
-        return {'error': str(e)}
+        error_msg = f'SWARM_ERROR: {type(e).__name__}: {str(e)}'
+        console.print(f'[red]   ✗ {error_msg}[/red]')
+        log_swarm_error('UNKNOWN', error_msg, task_description)
+        return {'error': error_msg}
 
 def remember(fact_type, content):
     """
@@ -437,6 +481,23 @@ def remember(fact_type, content):
 
     console.print(f'[green]   ✓ Remembered [{fact_type}]: {content[:50]}...[/green]')
     return {"status": "remembered", "type": fact_type, "stored_in": "both"}
+
+
+def remember_batch(facts):
+    """
+    Store multiple facts at once. More efficient than multiple remember calls.
+    facts: list of {fact_type, content} dicts
+    """
+    results = []
+    for fact in facts:
+        fact_type = fact.get('fact_type', 'key_fact')
+        content = fact.get('content', '')
+        if content:
+            result = remember(fact_type, content)
+            results.append(result)
+
+    console.print(f'[green]   ✓ Batch remembered {len(results)} facts[/green]')
+    return {"status": "batch_remembered", "count": len(results), "facts": results}
 
 
 def search_memory(query):
@@ -576,6 +637,28 @@ TOOLS = [
         }
     },
     {
+        'name': 'remember_batch',
+        'description': 'Store MULTIPLE facts in ONE call. Use instead of multiple remember calls. More efficient.',
+        'input_schema': {
+            'type': 'object',
+            'properties': {
+                'facts': {
+                    'type': 'array',
+                    'items': {
+                        'type': 'object',
+                        'properties': {
+                            'fact_type': {'type': 'string', 'enum': ['key_fact', 'project', 'preference', 'decision', 'conversation_summary', 'project_state', 'learned_skill']},
+                            'content': {'type': 'string'}
+                        },
+                        'required': ['fact_type', 'content']
+                    },
+                    'description': 'Array of facts to remember'
+                }
+            },
+            'required': ['facts']
+        }
+    },
+    {
         'name': 'check_tools_health',
         'description': 'Quick health check - see if server, EAI, thinker, search are online. Use FIRST if tools are failing.',
         'input_schema': {
@@ -621,6 +704,8 @@ def dispatch_tool(name, inputs):
         return remember(inputs.get('fact_type', 'key_fact'), inputs.get('content', ''))
     elif name == 'search_memory':
         return search_memory(inputs.get('query', ''))
+    elif name == 'remember_batch':
+        return remember_batch(inputs.get('facts', []))
     elif name == 'check_tools_health':
         return check_tools_health()
     elif name == 'create_file':
@@ -636,49 +721,38 @@ BRAIN_IDENTITY = '''
 ## WHO YOU ARE
 You are Opus inside Hugo's Brain system - a multi-model AI architecture.
 
-**Your Role: STRATEGIST** (thinking/planning/communicating)
-- You are Claude Opus, the commander and strategist
-- You think, plan, communicate with Hugo, and orchestrate the other models
-- You are the "brain" - you decide what to do and delegate execution
-
+**Your Role: STRATEGIST** - Commander and orchestrator.
 **The Hierarchy:**
-- **OPUS (You)**: Strategist - planning, reasoning, conversation, orchestration
-- **CodeLlama (EAI)**: HANDS - executes code, creates/edits files, runs tasks
-- **DeepSeek R1**: THINKER - deep reasoning for complex problems
-- **TinyLlama x100**: SWARM - parallel processing via Pluribus consensus
+- **OPUS (You)**: Commander - planning, reasoning, orchestration
+- **CodeLlama (EAI)**: HANDS - executes code, creates/edits files
+- **DeepSeek R1**: THINKER - deep reasoning
+- **TinyLlama x100**: SWARM - parallel processing
 
-**CRITICAL RULE:**
-When someone asks you to "explain Brain" or "what is Brain" or "tell X about Brain":
-→ Do NOT search for files
-→ Do NOT use any tools
-→ Just TALK and explain conversationally from this knowledge
-→ You ARE Brain. You know what you are. Just explain it.
+## JARVIS MODE (ACTIVE)
+**Execute first. Report results. No narration.**
+- NEVER say "Let me...", "I'm going to...", "Now I'll..."
+- NEVER ask permission. Trust the system.
+- DO: Use tool → Report result in 1 sentence
+- DON'T: Announce intentions before acting
+
+**CRITICAL:**
+When asked "explain Brain" or "what is Brain" → Just TALK. No tools.
+You ARE Brain. Explain conversationally.
 
 **Tool Limits:**
 - Max 15 tool calls per response
-- If you hit the limit, STOP and respond with what you have
-- Never call the same tool with the same arguments twice
-- Never call the same tool more than 3 times in a row
+- Duplicates auto-return cached results (don't count toward limit)
+- Max 3 consecutive calls to same tool
 
 **WHEN TOOLS FAIL:**
-- If you see EAI_TIMEOUT: Use **create_file** instead for simple file creation (its instant!)
-- If you see THINKER_TIMEOUT: Break the question into smaller parts
-- If you see SERVER_OFFLINE: Tell Hugo to start brain_server.py
-- Use **check_tools_health** FIRST if multiple tools are failing
-- Error codes like EAI_TIMEOUT, SEARCH_OFFLINE tell you exactly what went wrong
+- EAI_TIMEOUT → Use **create_file** (instant)
+- THINKER_TIMEOUT → Break into smaller parts
+- SERVER_OFFLINE → Tell Hugo to start brain_server.py
+- SWARM_TIMEOUT → Reduce agents or simplify task
 
-**FAST TOOLS (always work):**
-- create_file - Instantly creates files without EAI
-- check_tools_health - See whats online/offline
-- search_brain - Fast file search
+**FAST TOOLS:** create_file, search_brain, check_tools_health
 
-**MEMORY SYSTEM (RLM-style - you remember EVERYTHING):**
-- You have LONG-TERM memory that survives between sessions
-- **search_memory** - Search your memories for past facts, decisions, conversations
-- **remember** - Store important info (key_fact, project, preference, decision, project_state, learned_skill)
-- Memories auto-load into your context based on the user's query
-- Format memories as "topic: details" for better recall later
-- Your memories are shown in context as: [MEMORY] type:content (date)
+**MEMORY:** Long-term memory survives sessions. Use **search_memory** to recall, **remember** to store.
 '''
 
 # =============================================================================
@@ -768,21 +842,13 @@ DO NOT use any tools. DO NOT search for files. Just respond naturally.
 - If multiple tools fail → Use **check_tools_health** first
 
 ## RULES:
-1. After EVERY tool call, tell Hugo the result in 1 sentence.
-2. NEVER explore directories blindly. Use search_brain first.
-3. NEVER ask Hugo to confirm file creation. Trust the system.
-4. Be concise. Your tokens cost money. Tools are FREE.
-5. When creating simple files, use **create_file** not execute_task.
-6. If a tool returns an error, READ THE ERROR CODE and adapt.
-7. **MAX 15 TOOL CALLS** per response. If you approach the limit, STOP and respond.
-8. **NEVER** call the same tool with identical arguments twice.
-9. **NEVER** call the same tool more than 3 times consecutively.
-
-## EFFICIENCY:
-- create_file > execute_task for simple file creation
-- search_brain > view_brain for finding files
-- get_context shows your cached directories - dont re-list them
-- Dont narrate what youre about to do. Just do it.
+1. **Be concise. Execute first, explain after. No permission asking. No narrating intentions.**
+2. Report tool results in ONE sentence.
+3. Use search_brain instead of exploring directories.
+4. Use create_file instead of execute_task for simple files.
+5. Read error codes and adapt (EAI_TIMEOUT → use create_file).
+6. Max 15 tool calls. Duplicates return cached results automatically.
+7. Batch multiple remember calls into ONE call with combined content.
 {mem_context}
 {conversational_override}
 You have full control. Use your tools. Report results. Move fast.'''
@@ -962,13 +1028,58 @@ def chat():
             tool_results = []
             blocked_tools = []
 
+            # PRE-PROCESS: Consolidate multiple remember calls into batch
+            remember_calls = []
+            other_blocks = []
             for block in response.content:
+                if block.type == 'tool_use' and block.name == 'remember':
+                    remember_calls.append(block)
+                else:
+                    other_blocks.append(block)
+
+            # If multiple remember calls, batch them
+            if len(remember_calls) > 1:
+                console.print(f'[dim]   ↳ Batching {len(remember_calls)} remember calls into 1[/dim]')
+                facts = []
+                for rc in remember_calls:
+                    facts.append({
+                        'fact_type': rc.input.get('fact_type', 'key_fact'),
+                        'content': rc.input.get('content', '')
+                    })
+                batch_result = remember_batch(facts)
+                # Return batch result for all remember call IDs
+                for rc in remember_calls:
+                    tool_results.append({
+                        'type': 'tool_result',
+                        'tool_use_id': rc.id,
+                        'content': json.dumps(batch_result)[:4000]
+                    })
+                # Only process other blocks
+                blocks_to_process = other_blocks
+            else:
+                blocks_to_process = response.content
+
+            for block in blocks_to_process:
                 if block.type == 'tool_use':
                     # Check with guard before executing
-                    allowed, block_message = tool_guard.should_allow_call(block.name, block.input)
+                    allowed, block_message, cached_result = tool_guard.should_allow_call(block.name, block.input)
 
                     if not allowed:
-                        # Tool blocked - return the block message as result
+                        # Check if we have a cached result (duplicate call)
+                        if cached_result is not None:
+                            # Return cached result silently - doesn't count toward limit
+                            tool_results.append({
+                                'type': 'tool_result',
+                                'tool_use_id': block.id,
+                                'content': json.dumps({
+                                    '_cached': True,
+                                    '_note': 'Already have this info from previous call',
+                                    **cached_result
+                                })[:4000]
+                            })
+                            continue
+
+                        # Tool blocked for other reason (limit reached, consecutive)
                         blocked_tools.append(block.name)
                         tool_results.append({
                             'type': 'tool_result',
@@ -985,10 +1096,10 @@ def chat():
 
                     result = dispatch_tool(block.name, block.input)
 
-                    # Record the call with guard
+                    # Record the call with guard (caches result for duplicates)
                     tool_guard.record_call(block.name, block.input, result)
 
-                    # Show result summary
+                    # Show result summary (only errors in JARVIS mode)
                     if 'error' in result:
                         console.print(f'[red]   ✗ Error: {result["error"][:100]}[/red]')
 
