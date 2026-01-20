@@ -28,8 +28,318 @@ brain_url = f"http://127.0.0.1:{config['server_port']}"
 # JARVIS MODE - Execute silently, report results only, no narration
 JARVIS_MODE = True
 
+# SILENT MODE - All reasoning to internal log, user only sees final result
+SILENT_MODE = True
+
+# =============================================================================
+# COMPUTE EFFICIENCY CONFIG
+# =============================================================================
+COMPUTE_CONFIG = {
+    # Concurrency limits
+    'swarm_concurrency': 8,          # Max parallel TinyLlama agents (was 100)
+
+    # Budget limits
+    'max_tool_calls': 12,            # Max tool calls per response (was 15)
+    'max_same_args_repeat': 1,       # If same tool+args called twice with no new artifact, halt
+    'max_thinker_calls': 2,          # Max DeepSeek R1 calls per task
+    'max_api_calls': 1,              # Max external API calls per task
+
+    # Context compression
+    'max_context_tokens': 4096,      # Default context window for compression
+
+    # Caching
+    'cache_file': 'system/brain_cache.json',
+    'internal_log': 'system/brain_internal.log',
+}
+
 CONVO_MEMORY_FILE = "system/conversation_memory.json"
 SWARM_ERROR_LOG = "system/swarm_errors.log"
+BRAIN_CACHE_FILE = COMPUTE_CONFIG['cache_file']
+INTERNAL_LOG_FILE = COMPUTE_CONFIG['internal_log']
+
+# =============================================================================
+# INTERNAL LOGGING (SILENT MODE)
+# =============================================================================
+
+def log_internal(message, level='INFO'):
+    """Log to internal file when SILENT_MODE is on"""
+    if SILENT_MODE:
+        try:
+            os.makedirs(os.path.dirname(INTERNAL_LOG_FILE), exist_ok=True)
+            with open(INTERNAL_LOG_FILE, 'a', encoding='utf-8') as f:
+                timestamp = datetime.now().isoformat()
+                f.write(f"[{timestamp}] [{level}] {message}\n")
+        except:
+            pass
+
+# =============================================================================
+# FINGERPRINT CACHE - Zero new tokens for repeated tasks
+# =============================================================================
+
+class FingerprintCache:
+    """Hash tasks and cache results. Same fingerprint = instant cached result."""
+
+    def __init__(self, cache_file=BRAIN_CACHE_FILE):
+        self.cache_file = cache_file
+        self.cache = self._load_cache()
+
+    def _load_cache(self):
+        try:
+            if os.path.exists(self.cache_file):
+                with open(self.cache_file, 'r') as f:
+                    return json.load(f)
+        except:
+            pass
+        return {'fingerprints': {}, 'hits': 0, 'misses': 0}
+
+    def _save_cache(self):
+        try:
+            os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
+            with open(self.cache_file, 'w') as f:
+                json.dump(self.cache, f, indent=2)
+        except:
+            pass
+
+    def make_fingerprint(self, task, args, artifact_hashes=None):
+        """Create unique fingerprint from task + args + artifact hashes"""
+        data = {
+            'task': task,
+            'args': args,
+            'artifacts': artifact_hashes or []
+        }
+        data_str = json.dumps(data, sort_keys=True)
+        return hashlib.sha256(data_str.encode()).hexdigest()[:16]
+
+    def get(self, fingerprint):
+        """Get cached result if fingerprint exists"""
+        if fingerprint in self.cache['fingerprints']:
+            self.cache['hits'] += 1
+            log_internal(f"Cache HIT: {fingerprint}")
+            return self.cache['fingerprints'][fingerprint]
+        self.cache['misses'] += 1
+        return None
+
+    def set(self, fingerprint, result):
+        """Store result for fingerprint"""
+        self.cache['fingerprints'][fingerprint] = {
+            'result': result,
+            'timestamp': datetime.now().isoformat()
+        }
+        # Keep cache bounded
+        if len(self.cache['fingerprints']) > 1000:
+            # Remove oldest entries
+            sorted_entries = sorted(
+                self.cache['fingerprints'].items(),
+                key=lambda x: x[1].get('timestamp', ''),
+            )
+            self.cache['fingerprints'] = dict(sorted_entries[-500:])
+        self._save_cache()
+
+    def get_stats(self):
+        return {
+            'entries': len(self.cache['fingerprints']),
+            'hits': self.cache['hits'],
+            'misses': self.cache['misses'],
+            'hit_rate': f"{self.cache['hits'] / max(1, self.cache['hits'] + self.cache['misses']) * 100:.1f}%"
+        }
+
+# Global cache instance
+fingerprint_cache = FingerprintCache()
+
+# =============================================================================
+# COMPUTE BUDGET TRACKER
+# =============================================================================
+
+class ComputeBudget:
+    """Track and enforce compute budgets per task"""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        """Reset for new task"""
+        self.tool_calls = 0
+        self.thinker_calls = 0
+        self.api_calls = 0
+        self.same_args_calls = {}  # signature -> (count, last_artifact_hash)
+        self.artifacts_produced = set()  # Track new artifacts created
+        self.strikes = {}  # tool_signature -> strike count (2 strikes = halt)
+        self.halted = False
+        self.halt_reason = None
+
+    def can_call_tool(self):
+        if self.halted:
+            return False, self.halt_reason
+        if self.tool_calls >= COMPUTE_CONFIG['max_tool_calls']:
+            return False, f"Tool budget exhausted ({COMPUTE_CONFIG['max_tool_calls']} calls)"
+        return True, None
+
+    def can_call_thinker(self):
+        if self.halted:
+            return False, self.halt_reason
+        if self.thinker_calls >= COMPUTE_CONFIG['max_thinker_calls']:
+            return False, f"Thinker budget exhausted ({COMPUTE_CONFIG['max_thinker_calls']} calls)"
+        return True, None
+
+    def can_call_api(self):
+        if self.halted:
+            return False, self.halt_reason
+        if self.api_calls >= COMPUTE_CONFIG['max_api_calls']:
+            return False, f"API budget exhausted ({COMPUTE_CONFIG['max_api_calls']} calls)"
+        return True, None
+
+    def check_same_args_repeat(self, signature, current_artifact_hash):
+        """
+        2 STRIKES RULE: If same tool+args called twice with no new artifact, halt.
+        Returns: (allowed, halt_message)
+        """
+        if signature not in self.same_args_calls:
+            self.same_args_calls[signature] = (1, current_artifact_hash)
+            return True, None
+
+        count, last_hash = self.same_args_calls[signature]
+
+        # Check if new artifact was produced
+        new_artifact = current_artifact_hash != last_hash
+
+        if not new_artifact:
+            # Strike!
+            self.strikes[signature] = self.strikes.get(signature, 0) + 1
+            if self.strikes[signature] >= 2:
+                self.halted = True
+                self.halt_reason = f"blocked: need new artifact (2 strikes on same call)"
+                log_internal(f"2 STRIKES HALT: {signature}")
+                return False, self.halt_reason
+
+        self.same_args_calls[signature] = (count + 1, current_artifact_hash)
+        return True, None
+
+    def record_tool_call(self, tool_name):
+        self.tool_calls += 1
+        if tool_name == 'deep_think':
+            self.thinker_calls += 1
+        log_internal(f"Tool call: {tool_name} ({self.tool_calls}/{COMPUTE_CONFIG['max_tool_calls']})")
+
+    def record_artifact(self, artifact_id):
+        """Record that a new artifact was produced (file created, etc)"""
+        self.artifacts_produced.add(artifact_id)
+
+    def get_remaining(self):
+        return {
+            'tools': COMPUTE_CONFIG['max_tool_calls'] - self.tool_calls,
+            'thinker': COMPUTE_CONFIG['max_thinker_calls'] - self.thinker_calls,
+            'api': COMPUTE_CONFIG['max_api_calls'] - self.api_calls,
+        }
+
+# Global budget instance
+compute_budget = ComputeBudget()
+
+# =============================================================================
+# CONTEXT COMPRESSOR
+# =============================================================================
+
+class ContextCompressor:
+    """Compress context to schema before API calls"""
+
+    @staticmethod
+    def compress(task, known_facts, unknown_items, constraints, budget_remaining):
+        """
+        Compress context to schema:
+        TASK (1-3 sentences), KNOWN (max 8 bullets), UNKNOWN (max 5 bullets),
+        CONSTRAINTS (max 6 bullets), BUDGET (calls remaining)
+        """
+        compressed = []
+
+        # TASK: 1-3 sentences
+        task_text = str(task)[:500] if task else "No task specified"
+        compressed.append(f"TASK: {task_text}")
+
+        # KNOWN: max 8 bullets
+        if known_facts:
+            known_list = known_facts[:8] if isinstance(known_facts, list) else [known_facts]
+            compressed.append("KNOWN:")
+            for k in known_list[:8]:
+                compressed.append(f"  - {str(k)[:100]}")
+
+        # UNKNOWN: max 5 bullets
+        if unknown_items:
+            unknown_list = unknown_items[:5] if isinstance(unknown_items, list) else [unknown_items]
+            compressed.append("UNKNOWN:")
+            for u in unknown_list[:5]:
+                compressed.append(f"  - {str(u)[:80]}")
+
+        # CONSTRAINTS: max 6 bullets
+        if constraints:
+            const_list = constraints[:6] if isinstance(constraints, list) else [constraints]
+            compressed.append("CONSTRAINTS:")
+            for c in const_list[:6]:
+                compressed.append(f"  - {str(c)[:80]}")
+
+        # BUDGET
+        compressed.append(f"BUDGET: tools={budget_remaining.get('tools', 0)} thinker={budget_remaining.get('thinker', 0)}")
+
+        return "\n".join(compressed)
+
+    @staticmethod
+    def estimate_tokens(text):
+        """Rough token estimate (4 chars per token)"""
+        return len(text) // 4
+
+# =============================================================================
+# MODEL ROUTER - Route tasks to appropriate models
+# =============================================================================
+
+class ModelRouter:
+    """Route tasks to the right model with single-model-at-a-time enforcement"""
+
+    def __init__(self):
+        self.active_model = None  # Only one big model active
+        self.model_loads = {'codellama': 0, 'deepseek': 0, 'swarm': 0}
+
+    def route(self, task_type, task_description):
+        """
+        Route to appropriate model:
+        - CodeLlama: file ops, patches, commands
+        - DeepSeek R1: planning, diagnosis (max 2 calls)
+        - Swarm: parallel hypothesis, grep, test generation
+        """
+        task_lower = task_description.lower()
+
+        # File operations -> CodeLlama
+        if any(kw in task_lower for kw in ['create file', 'edit file', 'write', 'patch', 'modify', 'run', 'execute', 'command']):
+            return 'codellama', 'execute_task'
+
+        # Planning/diagnosis -> DeepSeek (if budget allows)
+        if any(kw in task_lower for kw in ['plan', 'diagnose', 'analyze', 'architect', 'design', 'why', 'how should']):
+            can_call, reason = compute_budget.can_call_thinker()
+            if can_call:
+                return 'deepseek', 'deep_think'
+            else:
+                log_internal(f"Routing to CodeLlama (thinker budget: {reason})")
+                return 'codellama', 'execute_task'
+
+        # Parallel tasks -> Swarm
+        if any(kw in task_lower for kw in ['parallel', 'multiple', 'batch', 'swarm', 'test generation', 'hypothesis']):
+            return 'swarm', 'pluribus_swarm'
+
+        # Default to CodeLlama for efficiency
+        return 'codellama', 'execute_task'
+
+    def set_active(self, model_name):
+        """Set active model (only one big model at a time)"""
+        if self.active_model and self.active_model != model_name:
+            log_internal(f"Model switch: {self.active_model} -> {model_name}")
+        self.active_model = model_name
+        self.model_loads[model_name] = self.model_loads.get(model_name, 0) + 1
+
+    def get_stats(self):
+        return {
+            'active': self.active_model,
+            'loads': self.model_loads
+        }
+
+# Global router instance
+model_router = ModelRouter()
 
 def load_conversation_memory():
     try:
@@ -84,8 +394,9 @@ class ToolCallGuard:
         r'\bwhat are you\b',
     ]
 
-    def __init__(self, max_total_calls=15, max_consecutive_same=3, max_recent_signatures=5):
-        self.max_total_calls = max_total_calls
+    def __init__(self, max_total_calls=None, max_consecutive_same=3, max_recent_signatures=5):
+        # Use COMPUTE_CONFIG for max_total_calls (default 12)
+        self.max_total_calls = max_total_calls or COMPUTE_CONFIG['max_tool_calls']
         self.max_consecutive_same = max_consecutive_same
         self.max_recent_signatures = max_recent_signatures
         self.reset()
@@ -238,13 +549,27 @@ def view_brain(operation, path=None):
 def execute_task(task_description):
     """Command EAI (CodeLlama) to create/edit files or run code"""
     try:
-        console.print(f'[dim]🤖 EAI working...[/dim]')
+        if not SILENT_MODE:
+            console.print(f'[dim]🤖 EAI working...[/dim]')
+        log_internal(f"EAI task: {task_description[:100]}...")
+
+        model_router.set_active('codellama')
         r = requests.post(f'{brain_url}/execute', json={'task_description': task_description}, timeout=120)
         result = r.json()
+
+        # Track artifacts produced
         if result.get('created'):
-            console.print(f'[green]   ✓ Created: {", ".join(result["created"])}[/green]')
+            for f in result['created']:
+                compute_budget.record_artifact(f"file:{f}")
+            if not SILENT_MODE:
+                console.print(f'[green]   ✓ Created: {", ".join(result["created"])}[/green]')
         if result.get('edited'):
-            console.print(f'[blue]   ✓ Edited: {", ".join(result["edited"])}[/blue]')
+            for f in result['edited']:
+                compute_budget.record_artifact(f"edit:{f}")
+            if not SILENT_MODE:
+                console.print(f'[blue]   ✓ Edited: {", ".join(result["edited"])}[/blue]')
+
+        log_internal(f"EAI result: created={result.get('created', [])}, edited={result.get('edited', [])}")
         return result
     except requests.exceptions.Timeout:
         return {'error': 'EAI_TIMEOUT: CodeLlama took too long (>120s). Try a simpler task or use create_file for basic file creation.', 'suggestion': 'Use create_file tool instead for simple file creation.'}
@@ -254,16 +579,28 @@ def execute_task(task_description):
         return {'error': f'EAI_ERROR: {str(e)}'}
 
 def deep_think(question, context=None):
-    """Consult DeepSeek R1 for complex reasoning"""
+    """Consult DeepSeek R1 for complex reasoning (max 2 calls per task)"""
+    # Check thinker budget
+    can_call, reason = compute_budget.can_call_thinker()
+    if not can_call:
+        log_internal(f"Thinker blocked: {reason}")
+        return {'error': f'THINKER_BUDGET: {reason}', 'suggestion': 'Use execute_task or break into smaller parts'}
+
     try:
-        console.print(f'[dim]🧠 Thinker reasoning...[/dim]')
+        if not SILENT_MODE:
+            console.print(f'[dim]🧠 Thinker reasoning...[/dim]')
+        log_internal(f"Thinker call: {question[:100]}...")
+
+        model_router.set_active('deepseek')
         payload = {'question': question}
         if context:
             payload['context'] = context
         r = requests.post(f'{brain_url}/think', json=payload, timeout=180)
         result = r.json()
         if result.get('reasoning'):
-            console.print(f'[blue]   ✓ Reasoning complete ({len(result["reasoning"])} chars)[/blue]')
+            if not SILENT_MODE:
+                console.print(f'[blue]   ✓ Reasoning complete ({len(result["reasoning"])} chars)[/blue]')
+            log_internal(f"Thinker complete: {len(result['reasoning'])} chars")
         return result
     except requests.exceptions.Timeout:
         return {'error': 'THINKER_TIMEOUT: DeepSeek R1 took too long (>180s). The question may be too complex or the model is busy.', 'suggestion': 'Try breaking down the question into smaller parts.'}
@@ -410,10 +747,21 @@ def log_swarm_error(error_type, error_msg, task_description):
     except:
         pass
 
-def pluribus_swarm(task_description, num_agents=50, rounds=2):
-    """Deploy TinyLlama swarm for parallel tasks"""
+def pluribus_swarm(task_description, num_agents=None, rounds=2):
+    """Deploy TinyLlama swarm for parallel tasks (max 8 concurrent)"""
+    # Enforce concurrency limit
+    max_concurrent = COMPUTE_CONFIG['swarm_concurrency']
+    if num_agents is None:
+        num_agents = max_concurrent
+    else:
+        num_agents = min(num_agents, max_concurrent)
+
     try:
-        console.print(f'[dim]🐜 Deploying {num_agents} agents...[/dim]')
+        if not SILENT_MODE:
+            console.print(f'[dim]🐜 Deploying {num_agents} agents (max {max_concurrent})...[/dim]')
+        log_internal(f"Swarm: {num_agents} agents, {rounds} rounds")
+
+        model_router.set_active('swarm')
         r = requests.post(f'{brain_url}/pluribus', json={
             'task_description': task_description,
             'num_agents': num_agents,
@@ -578,7 +926,7 @@ TOOLS = [
     },
     {
         'name': 'deep_think',
-        'description': 'Consult DeepSeek R1 for complex reasoning, architecture decisions, or multi-step planning. FREE.',
+        'description': 'DeepSeek R1 for planning/diagnosis ONLY. MAX 2 CALLS per task. Use sparingly.',
         'input_schema': {
             'type': 'object',
             'properties': {
@@ -598,12 +946,12 @@ TOOLS = [
     },
     {
         'name': 'pluribus_swarm',
-        'description': 'Deploy 50-200 TinyLlama agents as hive mind for massive parallel tasks. FREE.',
+        'description': 'Deploy TinyLlama swarm (max 8 concurrent) for parallel hypothesis/grep/test generation. FREE.',
         'input_schema': {
             'type': 'object',
             'properties': {
                 'task_description': {'type': 'string'},
-                'num_agents': {'type': 'integer', 'default': 50},
+                'num_agents': {'type': 'integer', 'default': 8, 'maximum': 8},
                 'rounds': {'type': 'integer', 'default': 2}
             },
             'required': ['task_description']
@@ -722,45 +1070,48 @@ BRAIN_IDENTITY = '''
 You are Opus inside Hugo's Brain system - a multi-model AI architecture.
 
 **Your Role: STRATEGIST** - Commander and orchestrator.
-**The Hierarchy:**
-- **OPUS (You)**: Commander - planning, reasoning, orchestration
-- **CodeLlama (EAI)**: HANDS - executes code, creates/edits files
-- **DeepSeek R1**: THINKER - deep reasoning
-- **TinyLlama x100**: SWARM - parallel processing
+**Hierarchy:**
+- **OPUS (You)**: Commander
+- **CodeLlama (EAI)**: File ops, patches, commands
+- **DeepSeek R1**: Planning/diagnosis ONLY (max 2 calls)
+- **TinyLlama x8**: Parallel tasks (8 concurrent max)
 
-## JARVIS MODE (ACTIVE)
-**Execute first. Report results. No narration.**
-- NEVER say "Let me...", "I'm going to...", "Now I'll..."
-- NEVER ask permission. Trust the system.
-- DO: Use tool → Report result in 1 sentence
-- DON'T: Announce intentions before acting
+## COMPUTE EFFICIENCY (ACTIVE)
+**Budgets per task:**
+- Tools: 12 calls max
+- Thinker (DeepSeek): 2 calls max
+- Swarm: 8 parallel agents max
 
-**CRITICAL:**
-When asked "explain Brain" or "what is Brain" → Just TALK. No tools.
-You ARE Brain. Explain conversationally.
+**2 STRIKES RULE:**
+If same tool+args called twice with no new artifact → HALT.
+Output "blocked: need X" and stop.
 
-**Tool Limits:**
-- Max 15 tool calls per response
-- Duplicates auto-return cached results (don't count toward limit)
-- Max 3 consecutive calls to same tool
+**ROUTING:**
+- File ops → CodeLlama (fast)
+- Planning/why/how → DeepSeek (limited)
+- Parallel search/test → Swarm (8 max)
 
-**WHEN TOOLS FAIL:**
-- EAI_TIMEOUT → Use **create_file** (instant)
-- THINKER_TIMEOUT → Break into smaller parts
-- SERVER_OFFLINE → Tell Hugo to start brain_server.py
-- SWARM_TIMEOUT → Reduce agents or simplify task
+**FINGERPRINT CACHE:**
+Repeated identical tasks return cached results instantly (zero tokens).
+
+**SILENT MODE:**
+No narration. Execute → Report result only.
 
 **FAST TOOLS:** create_file, search_brain, check_tools_health
-
-**MEMORY:** Long-term memory survives sessions. Use **search_memory** to recall, **remember** to store.
+**MEMORY:** search_memory to recall, remember to store.
 '''
 
 # =============================================================================
 # SYSTEM PROMPT
 # =============================================================================
 
-def get_system_prompt(force_conversational=False, user_query="", session_context=None):
+def get_system_prompt(force_conversational=False, user_query="", session_context=None, budget=None):
     mem_context = ""
+
+    # Budget info
+    if budget is None:
+        budget = compute_budget.get_remaining()
+    budget_str = f"tools={budget.get('tools', 12)} thinker={budget.get('thinker', 2)}"
 
     # Session context (loaded on startup)
     if session_context:
@@ -842,16 +1193,16 @@ DO NOT use any tools. DO NOT search for files. Just respond naturally.
 - If multiple tools fail → Use **check_tools_health** first
 
 ## RULES:
-1. **Be concise. Execute first, explain after. No permission asking. No narrating intentions.**
-2. Report tool results in ONE sentence.
-3. Use search_brain instead of exploring directories.
-4. Use create_file instead of execute_task for simple files.
-5. Read error codes and adapt (EAI_TIMEOUT → use create_file).
-6. Max 15 tool calls. Duplicates return cached results automatically.
-7. Batch multiple remember calls into ONE call with combined content.
+1. **Execute first. Report result only. No narration.**
+2. **BUDGET: 12 tools, 2 thinker, 8 swarm agents.**
+3. **2 STRIKES:** Same call + no new artifact = halt with "blocked: need X"
+4. Route: file ops→CodeLlama, planning→DeepSeek (limited), parallel→Swarm
+5. Use create_file (instant) instead of execute_task for simple files.
+6. Duplicates return cached results (don't count toward budget).
 {mem_context}
 {conversational_override}
-You have full control. Use your tools. Report results. Move fast.'''
+BUDGET REMAINING: {budget_str}
+Execute. Report. Stop when done.'''
 
 # =============================================================================
 # CLAUDE API CALLER
@@ -915,13 +1266,14 @@ def chat():
     if session_context.get("active_projects"):
         console.print(f'[dim]Active projects: {", ".join(session_context["active_projects"][:3])}[/dim]')
 
+    cache_stats = fingerprint_cache.get_stats()
     console.print(Panel.fit(
         f'[bold green]👑 OPUS[/bold green] Commander\n'
-        f'[bold cyan]🤖 EAI[/bold cyan] CodeLlama (hands)\n'
-        f'[bold blue]🧠 THINKER[/bold blue] DeepSeek R1\n'
-        f'[bold yellow]🐜 SWARM[/bold yellow] TinyLlama x100\n'
-        f'[dim]Session #{convo_memory["sessions"]} | Tool Guard: max 15 calls[/dim]\n'
-        f'[bold magenta]📚 MEMORY[/bold magenta] [dim]{mem_stats["total_conversations"]} convos | {mem_stats["total_facts"]} facts | {mem_stats["total_entities"]} concepts[/dim]',
+        f'[bold cyan]🤖 EAI[/bold cyan] CodeLlama (file ops)\n'
+        f'[bold blue]🧠 THINKER[/bold blue] DeepSeek R1 (max 2/task)\n'
+        f'[bold yellow]🐜 SWARM[/bold yellow] TinyLlama x{COMPUTE_CONFIG["swarm_concurrency"]}\n'
+        f'[dim]Session #{convo_memory["sessions"]} | Budget: {COMPUTE_CONFIG["max_tool_calls"]} tools | Cache: {cache_stats["entries"]} ({cache_stats["hit_rate"]} hit)[/dim]\n'
+        f'[bold magenta]📚 MEMORY[/bold magenta] [dim]{mem_stats["total_conversations"]} convos | {mem_stats["total_facts"]} facts[/dim]',
         border_style='green'
     ))
     console.print()
@@ -961,8 +1313,10 @@ def chat():
             console.print(f'[dim]Memory: {memory_stats["total_conversations"]} convos | {memory_stats["total_facts"]} facts | {memory_stats["total_entities"]} concepts[/dim]')
             break
 
-        # Reset tool guard for new user message
+        # Reset guards for new user message
         tool_guard.reset()
+        compute_budget.reset()
+        log_internal(f"New task: {user_input[:100]}...")
 
         # Pre-flight check: Is this a conversational query?
         is_conversational = tool_guard.is_conversational_query(user_input)
@@ -1092,15 +1446,61 @@ def chat():
                             force_stop = True
                         continue
 
-                    console.print(f'[dim]   → {block.name} ({tool_guard.total_calls + 1}/{tool_guard.max_total_calls})[/dim]')
+                    # Check compute budget
+                    can_call, budget_reason = compute_budget.can_call_tool()
+                    if not can_call:
+                        log_internal(f"Budget blocked: {budget_reason}")
+                        tool_results.append({
+                            'type': 'tool_result',
+                            'tool_use_id': block.id,
+                            'content': json.dumps({'blocked': True, 'message': budget_reason})
+                        })
+                        force_stop = True
+                        continue
+
+                    # Check fingerprint cache first
+                    signature = tool_guard._make_signature(block.name, block.input)
+                    artifact_hash = hashlib.md5(json.dumps(list(compute_budget.artifacts_produced)).encode()).hexdigest()[:8]
+                    fingerprint = fingerprint_cache.make_fingerprint(block.name, block.input, [artifact_hash])
+                    cached = fingerprint_cache.get(fingerprint)
+                    if cached:
+                        log_internal(f"Cache hit: {block.name}")
+                        if not SILENT_MODE:
+                            console.print(f'[dim]   → {block.name} (CACHED)[/dim]')
+                        tool_results.append({
+                            'type': 'tool_result',
+                            'tool_use_id': block.id,
+                            'content': json.dumps({'_cached': True, **cached.get('result', {})})[:4000]
+                        })
+                        continue
+
+                    # Check 2 strikes rule
+                    allowed_strike, strike_reason = compute_budget.check_same_args_repeat(signature, artifact_hash)
+                    if not allowed_strike:
+                        if not SILENT_MODE:
+                            console.print(f'[yellow]   ⚠ {strike_reason}[/yellow]')
+                        tool_results.append({
+                            'type': 'tool_result',
+                            'tool_use_id': block.id,
+                            'content': json.dumps({'halted': True, 'message': strike_reason})
+                        })
+                        force_stop = True
+                        continue
+
+                    if not SILENT_MODE:
+                        console.print(f'[dim]   → {block.name} ({tool_guard.total_calls + 1}/{tool_guard.max_total_calls})[/dim]')
 
                     result = dispatch_tool(block.name, block.input)
 
-                    # Record the call with guard (caches result for duplicates)
+                    # Record the call with guard and budget
                     tool_guard.record_call(block.name, block.input, result)
+                    compute_budget.record_tool_call(block.name)
 
-                    # Show result summary (only errors in JARVIS mode)
-                    if 'error' in result:
+                    # Cache the result
+                    fingerprint_cache.set(fingerprint, result)
+
+                    # Show result summary (only errors, and only if not SILENT)
+                    if 'error' in result and not SILENT_MODE:
                         console.print(f'[red]   ✗ Error: {result["error"][:100]}[/red]')
 
                     tool_results.append({
@@ -1166,7 +1566,10 @@ def chat():
         guard_stats = tool_guard.get_stats()
         memory_stats = opus_memory.get_full_stats()
         stats = tracker.get_stats()
-        console.print(f'\n[dim](Tokens: {stats["tokens_used"]} | Cost: {stats["estimated_cost"]} | Tools: {guard_stats["total_calls"]}/{tool_guard.max_total_calls} | Memory: {memory_stats["total_facts"]} facts)[/dim]\n')
+        budget = compute_budget.get_remaining()
+        if not SILENT_MODE:
+            console.print(f'\n[dim](Tokens: {stats["tokens_used"]} | Cost: {stats["estimated_cost"]} | Tools: {guard_stats["total_calls"]}/{COMPUTE_CONFIG["max_tool_calls"]} | Budget: T{budget["tools"]} D{budget["thinker"]})[/dim]\n')
+        log_internal(f"Response complete: tokens={stats['tokens_used']}, tools={guard_stats['total_calls']}")
 
 if __name__ == '__main__':
     chat()
