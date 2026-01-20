@@ -1,5 +1,4 @@
-import anthropic
-from openai import OpenAI
+import ollama
 import json
 import requests
 from rich.console import Console
@@ -23,18 +22,17 @@ opus_memory = get_memory()
 with open('brain_config.json', 'r') as f:
     config = json.load(f)
 
-# DeepSeek V3 as the main commander (cheaper, faster, no credit issues)
-# Uses OpenAI-compatible API
-deepseek_client = OpenAI(
-    api_key=config.get('deepseek_api_key', config.get('anthropic_api_key')),
-    base_url="https://api.deepseek.com"
-)
+# =============================================================================
+# FULLY OFFLINE - No API costs, no wifi required
+# =============================================================================
+# DeepSeek R1 via Ollama = Commander + Thinker (one model, two roles)
+# CodeLlama 7B via Ollama = Hands/Executor (file ops, code only)
+# TinyLlama x8 via Ollama = Swarm (parallel grunt work)
+# =============================================================================
 
-# Keep Anthropic as fallback if needed
-try:
-    anthropic_client = anthropic.Anthropic(api_key=config.get('anthropic_api_key', ''))
-except:
-    anthropic_client = None
+COMMANDER_MODEL = "deepseek-r1:latest"  # Main brain - strategist + deep thinker
+EXECUTOR_MODEL = "codellama:7b"          # Hands - file ops, code execution
+SWARM_MODEL = "tinyllama"                # Grunt workers - parallel tasks
 
 brain_url = f"http://127.0.0.1:{config['server_port']}"
 
@@ -592,35 +590,52 @@ def execute_task(task_description):
         return {'error': f'EAI_ERROR: {str(e)}'}
 
 def deep_think(question, context=None):
-    """Consult DeepSeek R1 for complex reasoning (max 2 calls per task)"""
+    """Deep reasoning via DeepSeek R1 (same model as commander, focused thinking mode)"""
     # Check thinker budget
     can_call, reason = compute_budget.can_call_thinker()
     if not can_call:
         log_internal(f"Thinker blocked: {reason}")
-        return {'error': f'THINKER_BUDGET: {reason}', 'suggestion': 'Use execute_task or break into smaller parts'}
+        return {'error': f'THINKER_BUDGET: {reason}', 'suggestion': 'Already at max 2 deep_think calls'}
 
     try:
         if not SILENT_MODE:
-            console.print(f'[dim]🧠 Thinker reasoning...[/dim]')
-        log_internal(f"Thinker call: {question[:100]}...")
+            console.print(f'[dim]🧠 Deep thinking...[/dim]')
+        log_internal(f"Deep think: {question[:100]}...")
 
         model_router.set_active('deepseek')
-        payload = {'question': question}
-        if context:
-            payload['context'] = context
-        r = requests.post(f'{brain_url}/think', json=payload, timeout=180)
-        result = r.json()
-        if result.get('reasoning'):
+
+        # Call R1 directly with focused thinking prompt
+        thinking_prompt = f"""You are in DEEP THINKING mode. Focus entirely on this question.
+Think step by step. Consider multiple angles. Be thorough.
+
+CONTEXT: {context or 'None provided'}
+
+QUESTION: {question}
+
+Provide your detailed reasoning:"""
+
+        response = ollama.chat(
+            model=COMMANDER_MODEL,
+            messages=[{"role": "user", "content": thinking_prompt}],
+            options={
+                'num_predict': 4096,
+                'temperature': 0.3,  # Lower temp for focused reasoning
+            }
+        )
+
+        reasoning = response.get('message', {}).get('content', '')
+
+        if reasoning:
             if not SILENT_MODE:
-                console.print(f'[blue]   ✓ Reasoning complete ({len(result["reasoning"])} chars)[/blue]')
-            log_internal(f"Thinker complete: {len(result['reasoning'])} chars")
-        return result
-    except requests.exceptions.Timeout:
-        return {'error': 'THINKER_TIMEOUT: DeepSeek R1 took too long (>180s). The question may be too complex or the model is busy.', 'suggestion': 'Try breaking down the question into smaller parts.'}
-    except requests.exceptions.ConnectionError:
-        return {'error': 'THINKER_OFFLINE: Cannot reach Brain server. Is brain_server.py running?'}
+                console.print(f'[blue]   ✓ Deep thinking complete ({len(reasoning)} chars)[/blue]')
+            log_internal(f"Deep think complete: {len(reasoning)} chars")
+
+        return {'reasoning': reasoning, 'model': COMMANDER_MODEL}
     except Exception as e:
-        return {'error': f'THINKER_ERROR: {str(e)}'}
+        error_str = str(e)
+        if 'connection' in error_str.lower():
+            return {'error': 'OLLAMA_OFFLINE: Ollama not running. Start with: ollama serve'}
+        return {'error': f'THINKER_ERROR: {error_str}'}
 
 def search_brain(query):
     """Search files by name or content without directory traversal"""
@@ -939,7 +954,7 @@ TOOLS = [
     },
     {
         'name': 'deep_think',
-        'description': 'DeepSeek R1 for planning/diagnosis ONLY. MAX 2 CALLS per task. Use sparingly.',
+        'description': 'Focused deep reasoning mode (same R1, lower temp). MAX 2 CALLS per task. Use for complex analysis.',
         'input_schema': {
             'type': 'object',
             'properties': {
@@ -1080,14 +1095,15 @@ def dispatch_tool(name, inputs):
 
 BRAIN_IDENTITY = '''
 ## WHO YOU ARE
-You are DeepSeek V3 inside Hugo's Brain system - a multi-model AI architecture.
+You are DeepSeek R1 inside Hugo's Brain system - FULLY OFFLINE multi-model AI.
 
-**Your Role: COMMANDER** - Strategist and orchestrator.
+**Your Role: COMMANDER + THINKER** - You are both the strategist AND deep reasoner.
 **Hierarchy:**
-- **DEEPSEEK V3 (You)**: Commander - planning, reasoning, orchestration
-- **CodeLlama (EAI)**: File ops, patches, commands (local)
-- **DeepSeek R1**: Deep reasoning (local, max 2 calls)
-- **TinyLlama x8**: Parallel tasks (8 concurrent max)
+- **DEEPSEEK R1 (You)**: Commander + Thinker - planning, reasoning, orchestration, deep analysis
+- **CodeLlama 7B**: HANDS - file ops, code execution, patches (use execute_task)
+- **TinyLlama x8**: SWARM - parallel grunt work (8 concurrent max)
+
+**FULLY OFFLINE:** No API costs, no wifi required. Everything runs locally via Ollama.
 
 ## COMPUTE EFFICIENCY (ACTIVE)
 **Budgets per task:**
@@ -1218,46 +1234,47 @@ BUDGET REMAINING: {budget_str}
 Execute. Report. Stop when done.'''
 
 # =============================================================================
-# DEEPSEEK V3 API CALLER (OpenAI-compatible)
+# OLLAMA LOCAL MODEL CALLER (FULLY OFFLINE)
 # =============================================================================
 
-def convert_tools_to_openai_format(tools):
-    """Convert Anthropic tool format to OpenAI function format"""
+def format_tools_for_prompt(tools):
+    """Format tools as text for the system prompt (Ollama doesn't support function calling natively)"""
     if not tools:
-        return None
-    openai_tools = []
-    for tool in tools:
-        openai_tools.append({
-            "type": "function",
-            "function": {
-                "name": tool['name'],
-                "description": tool['description'],
-                "parameters": tool['input_schema']
-            }
-        })
-    return openai_tools
+        return ""
 
-def convert_messages_for_deepseek(messages, system_prompt):
-    """Convert message format for DeepSeek (OpenAI-compatible)"""
+    tool_text = "\n\n## AVAILABLE TOOLS:\n"
+    tool_text += "To use a tool, output EXACTLY this format on its own line:\n"
+    tool_text += "TOOL_CALL: tool_name {\"param\": \"value\"}\n\n"
+
+    for tool in tools:
+        tool_text += f"**{tool['name']}**: {tool['description']}\n"
+        props = tool['input_schema'].get('properties', {})
+        if props:
+            params = ", ".join([f"{k}: {v.get('type', 'string')}" for k, v in props.items()])
+            tool_text += f"  Parameters: {params}\n"
+
+    tool_text += "\nAfter using a tool, wait for the result before continuing.\n"
+    return tool_text
+
+def convert_messages_for_ollama(messages, system_prompt):
+    """Convert message format for Ollama"""
     converted = []
     if system_prompt:
         converted.append({"role": "system", "content": system_prompt})
 
     for msg in messages:
         if msg['role'] == 'user':
-            # Handle tool results
             if isinstance(msg.get('content'), list):
-                # Tool results - convert to assistant message format
+                # Tool results
                 tool_results = []
                 for item in msg['content']:
                     if item.get('type') == 'tool_result':
-                        tool_results.append(f"[Tool Result {item.get('tool_use_id', '')}]: {item.get('content', '')}")
+                        tool_results.append(f"[Tool Result]: {item.get('content', '')}")
                 if tool_results:
                     converted.append({"role": "user", "content": "\n".join(tool_results)})
             else:
                 converted.append({"role": "user", "content": msg['content']})
         elif msg['role'] == 'assistant':
-            # Handle assistant messages with tool calls
             if hasattr(msg.get('content'), '__iter__') and not isinstance(msg.get('content'), str):
                 text_parts = []
                 for block in msg['content']:
@@ -1265,7 +1282,7 @@ def convert_messages_for_deepseek(messages, system_prompt):
                         if block.type == 'text':
                             text_parts.append(block.text)
                         elif block.type == 'tool_use':
-                            text_parts.append(f"[Calling {block.name}: {json.dumps(block.input)}]")
+                            text_parts.append(f"TOOL_CALL: {block.name} {json.dumps(block.input)}")
                 if text_parts:
                     converted.append({"role": "assistant", "content": "\n".join(text_parts)})
             else:
@@ -1273,38 +1290,73 @@ def convert_messages_for_deepseek(messages, system_prompt):
 
     return converted
 
-class DeepSeekResponse:
-    """Wrapper to make DeepSeek response look like Anthropic response"""
-    def __init__(self, openai_response):
-        self.raw = openai_response
+def parse_tool_calls(text):
+    """Parse TOOL_CALL: format from model output"""
+    tool_calls = []
+    lines = text.split('\n')
+
+    for line in lines:
+        line = line.strip()
+        if line.startswith('TOOL_CALL:'):
+            try:
+                # Parse: TOOL_CALL: tool_name {"param": "value"}
+                rest = line[10:].strip()
+                # Find the tool name (first word)
+                parts = rest.split(' ', 1)
+                tool_name = parts[0]
+                tool_args = {}
+                if len(parts) > 1:
+                    # Try to parse JSON args
+                    try:
+                        tool_args = json.loads(parts[1])
+                    except:
+                        # Try to extract from the rest of the line
+                        pass
+                tool_calls.append({
+                    'id': f"call_{hashlib.md5(line.encode()).hexdigest()[:8]}",
+                    'name': tool_name,
+                    'input': tool_args
+                })
+            except:
+                pass
+
+    return tool_calls
+
+class OllamaResponse:
+    """Wrapper to make Ollama response look like Anthropic response"""
+    def __init__(self, ollama_response, original_text):
+        self.raw = ollama_response
+        self.original_text = original_text
         self.stop_reason = 'end_turn'
         self.content = []
 
-        # Parse the response
-        choice = openai_response.choices[0] if openai_response.choices else None
-        if choice:
-            # Check for tool calls
-            if choice.message.tool_calls:
-                self.stop_reason = 'tool_use'
-                for tc in choice.message.tool_calls:
-                    self.content.append(ToolUseBlock(
-                        id=tc.id,
-                        name=tc.function.name,
-                        input=json.loads(tc.function.arguments) if tc.function.arguments else {}
-                    ))
+        # Parse tool calls from text
+        tool_calls = parse_tool_calls(original_text)
 
-            # Add text content
-            if choice.message.content:
-                self.content.append(TextBlock(text=choice.message.content))
+        if tool_calls:
+            self.stop_reason = 'tool_use'
+            for tc in tool_calls:
+                self.content.append(ToolUseBlock(
+                    id=tc['id'],
+                    name=tc['name'],
+                    input=tc['input']
+                ))
 
-            # Check finish reason
-            if choice.finish_reason == 'tool_calls':
-                self.stop_reason = 'tool_use'
+        # Add remaining text (without tool calls)
+        clean_text = original_text
+        for line in original_text.split('\n'):
+            if line.strip().startswith('TOOL_CALL:'):
+                clean_text = clean_text.replace(line, '')
+        clean_text = clean_text.strip()
+        if clean_text:
+            self.content.append(TextBlock(text=clean_text))
 
-        # Usage tracking
+        # Usage tracking (Ollama provides token counts)
+        prompt_tokens = ollama_response.get('prompt_eval_count', 0) if isinstance(ollama_response, dict) else 0
+        completion_tokens = ollama_response.get('eval_count', 0) if isinstance(ollama_response, dict) else 0
         self.usage = type('Usage', (), {
-            'input_tokens': openai_response.usage.prompt_tokens if openai_response.usage else 0,
-            'output_tokens': openai_response.usage.completion_tokens if openai_response.usage else 0
+            'input_tokens': prompt_tokens,
+            'output_tokens': completion_tokens
         })()
 
 class TextBlock:
@@ -1319,31 +1371,43 @@ class ToolUseBlock:
         self.name = name
         self.input = input
 
-def call_deepseek(messages, tools=None, system_prompt=None):
-    """Call DeepSeek V3 API (main commander)"""
+def call_commander(messages, tools=None, system_prompt=None):
+    """Call DeepSeek R1 via Ollama (local, offline)"""
     for attempt in range(3):
         try:
-            # Convert formats
-            converted_messages = convert_messages_for_deepseek(messages, system_prompt or get_system_prompt())
-            openai_tools = convert_tools_to_openai_format(tools)
+            # Build system prompt with tools
+            full_system = system_prompt or get_system_prompt()
+            if tools:
+                full_system += format_tools_for_prompt(tools)
 
-            params = {
-                'model': 'deepseek-chat',  # DeepSeek V3
-                'max_tokens': 8000,
-                'messages': converted_messages,
-            }
-            if openai_tools:
-                params['tools'] = openai_tools
-                params['tool_choice'] = 'auto'
+            # Convert messages
+            converted_messages = convert_messages_for_ollama(messages, full_system)
 
-            response = deepseek_client.chat.completions.create(**params)
-            return DeepSeekResponse(response), None
+            log_internal(f"Calling {COMMANDER_MODEL} with {len(converted_messages)} messages")
+
+            # Call Ollama
+            response = ollama.chat(
+                model=COMMANDER_MODEL,
+                messages=converted_messages,
+                options={
+                    'num_predict': 4096,
+                    'temperature': 0.7,
+                }
+            )
+
+            # Extract response text
+            response_text = response.get('message', {}).get('content', '')
+
+            log_internal(f"Commander response: {len(response_text)} chars")
+
+            return OllamaResponse(response, response_text), None
 
         except Exception as e:
             error_str = str(e)
-            if 'rate_limit' in error_str.lower():
-                console.print(f'[yellow]Rate limited, waiting 10s...[/yellow]')
-                time.sleep(10)
+            log_internal(f"Commander error (attempt {attempt+1}): {error_str}", level='ERROR')
+            if 'connection' in error_str.lower():
+                console.print(f'[red]Ollama not running! Start with: ollama serve[/red]')
+                return None, 'OLLAMA_OFFLINE: Start ollama with: ollama serve'
             elif attempt < 2:
                 time.sleep(2)
                 continue
@@ -1353,7 +1417,8 @@ def call_deepseek(messages, tools=None, system_prompt=None):
     return None, 'Max retries'
 
 # Alias for compatibility
-call_claude = call_deepseek
+call_claude = call_commander
+call_deepseek = call_commander
 
 # =============================================================================
 # MAIN CHAT LOOP
@@ -1388,10 +1453,10 @@ def chat():
 
     cache_stats = fingerprint_cache.get_stats()
     console.print(Panel.fit(
-        f'[bold green]👑 DEEPSEEK V3[/bold green] Commander (API)\n'
-        f'[bold cyan]🤖 EAI[/bold cyan] CodeLlama (local)\n'
-        f'[bold blue]🧠 THINKER[/bold blue] DeepSeek R1 (local, max 2)\n'
+        f'[bold green]👑 DEEPSEEK R1[/bold green] Commander + Thinker (LOCAL)\n'
+        f'[bold cyan]🤖 EAI[/bold cyan] CodeLlama 7B (local)\n'
         f'[bold yellow]🐜 SWARM[/bold yellow] TinyLlama x{COMPUTE_CONFIG["swarm_concurrency"]}\n'
+        f'[dim]FULLY OFFLINE - No API costs, no wifi required[/dim]\n'
         f'[dim]Session #{convo_memory["sessions"]} | Budget: {COMPUTE_CONFIG["max_tool_calls"]} tools | Cache: {cache_stats["entries"]} ({cache_stats["hit_rate"]} hit)[/dim]\n'
         f'[bold magenta]📚 MEMORY[/bold magenta] [dim]{mem_stats["total_conversations"]} convos | {mem_stats["total_facts"]} facts[/dim]',
         border_style='green'
