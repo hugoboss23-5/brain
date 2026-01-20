@@ -251,20 +251,52 @@ class RecursiveMemory:
 
         self._save_index()
 
-    def remember_fact(self, fact_type: str, content: str):
-        """Explicitly remember a fact (called by Opus via remember tool)"""
+    def remember_fact(self, fact_type: str, content: str, tags: List[str] = None):
+        """
+        Explicitly remember a fact (called by Opus via remember tool).
+
+        Supported types:
+        - key_fact: Important factual information
+        - project: Project info (marked as active)
+        - preference: User preference
+        - decision: Important decision made
+        - conversation_summary: Summary of a conversation
+        - project_state: Current state of a project
+        - learned_skill: New skill or technique learned
+        """
         fact_entry = {
             "content": content,
             "type": fact_type,
             "timestamp": datetime.now().isoformat(),
             "hash": hashlib.md5(content.encode()).hexdigest()[:8],
-            "explicit": True  # Marked as explicitly remembered
+            "explicit": True,  # Marked as explicitly remembered
+            "tags": tags or []
         }
+
+        # Mark project types as active
+        if fact_type in ["project", "project_state"]:
+            fact_entry["active"] = True
 
         if not any(f["hash"] == fact_entry["hash"] for f in self.index["facts"]):
             self.index["facts"].append(fact_entry)
             self.index["total_facts"] += 1
+
+            # Also update user model for preferences
+            if fact_type == "preference" and content not in self.index["user_model"]["preferences"]:
+                self.index["user_model"]["preferences"].append(content)
+                self.index["user_model"]["preferences"] = self.index["user_model"]["preferences"][-50:]
+
+            # Track projects
+            if fact_type in ["project", "project_state"]:
+                # Extract project name (first word or phrase before colon/dash)
+                proj_name = content.split(':')[0].split('-')[0].strip()[:30]
+                if proj_name and proj_name not in [p.lower() for p in self.index["user_model"]["projects"]]:
+                    self.index["user_model"]["projects"].append(proj_name)
+                    self.index["user_model"]["projects"] = self.index["user_model"]["projects"][-30:]
+
             self._save_index()
+
+        return fact_entry
 
     def get_relevant_memories(self, query: str, limit: int = 10) -> Dict:
         """
@@ -347,6 +379,140 @@ class RecursiveMemory:
             "last_updated": self.index.get("last_updated", "never"),
             "created": self.index.get("created", "unknown")
         }
+
+    def search_memories(self, query: str, limit: int = 20) -> Dict:
+        """
+        Search all memories by keyword. Returns matching facts, entities, convos.
+        This is the tool Opus can use to explicitly query memories.
+        """
+        query_lower = query.lower()
+        query_words = set(query_lower.split())
+
+        results = {
+            "query": query,
+            "matching_facts": [],
+            "matching_entities": [],
+            "matching_conversations": [],
+            "matching_preferences": [],
+            "matching_projects": []
+        }
+
+        # Search facts
+        for fact in self.index.get("facts", []):
+            content = fact.get("content", "").lower()
+            fact_words = set(content.split())
+
+            # Check for word overlap or substring match
+            overlap = query_words & fact_words
+            if overlap or query_lower in content:
+                score = len(overlap) + (2 if query_lower in content else 0)
+                results["matching_facts"].append({
+                    "content": fact["content"],
+                    "timestamp": fact.get("timestamp", "unknown"),
+                    "type": fact.get("type", "extracted"),
+                    "relevance": score
+                })
+
+        # Sort by relevance and limit
+        results["matching_facts"] = sorted(
+            results["matching_facts"],
+            key=lambda x: x["relevance"],
+            reverse=True
+        )[:limit]
+
+        # Search entities
+        for entity, info in self.index.get("entities", {}).items():
+            if query_lower in entity or any(w in entity for w in query_words):
+                results["matching_entities"].append({
+                    "name": entity,
+                    "count": info.get("count", 0),
+                    "first_seen": info.get("first_seen", "unknown"),
+                    "last_seen": info.get("last_seen", "unknown")
+                })
+
+        results["matching_entities"] = results["matching_entities"][:limit]
+
+        # Search conversation summaries
+        for conv in self.index.get("conversations", []):
+            summary = conv.get("summary", "").lower()
+            if query_lower in summary or any(w in summary for w in query_words):
+                results["matching_conversations"].append({
+                    "id": conv.get("id"),
+                    "timestamp": conv.get("timestamp"),
+                    "summary": conv.get("summary", "")[:200],
+                    "message_count": conv.get("message_count", 0)
+                })
+
+        results["matching_conversations"] = results["matching_conversations"][:5]
+
+        # Search user preferences
+        for pref in self.index.get("user_model", {}).get("preferences", []):
+            if query_lower in pref.lower() or any(w in pref.lower() for w in query_words):
+                results["matching_preferences"].append(pref)
+
+        # Search projects
+        for proj in self.index.get("user_model", {}).get("projects", []):
+            if query_lower in proj.lower() or any(w in proj.lower() for w in query_words):
+                results["matching_projects"].append(proj)
+
+        results["total_matches"] = (
+            len(results["matching_facts"]) +
+            len(results["matching_entities"]) +
+            len(results["matching_conversations"]) +
+            len(results["matching_preferences"]) +
+            len(results["matching_projects"])
+        )
+
+        return results
+
+    def get_session_context(self) -> Dict:
+        """
+        Get context to load on session startup.
+        Returns last 3 conversation summaries and active project memories.
+        """
+        context = {
+            "recent_conversations": [],
+            "active_projects": [],
+            "recent_facts": [],
+            "user_snapshot": {}
+        }
+
+        # Last 3 conversation summaries
+        convos = self.index.get("conversations", [])
+        for conv in convos[-3:]:
+            context["recent_conversations"].append({
+                "timestamp": conv.get("timestamp"),
+                "summary": conv.get("summary", ""),
+                "id": conv.get("id")
+            })
+
+        # Projects from user model
+        context["active_projects"] = self.index.get("user_model", {}).get("projects", [])[-5:]
+
+        # Recent facts (last 10)
+        context["recent_facts"] = self.index.get("facts", [])[-10:]
+
+        # User snapshot
+        user_model = self.index.get("user_model", {})
+        context["user_snapshot"] = {
+            "name": user_model.get("name", "User"),
+            "preferences": user_model.get("preferences", [])[-5:],
+            "interests": user_model.get("interests", [])[-5:],
+            "communication_style": user_model.get("communication_style", [])
+        }
+
+        return context
+
+    def format_memory_for_context(self, memory_item: Dict, mem_type: str) -> str:
+        """Format a memory item for injection into Opus's context"""
+        timestamp = memory_item.get("timestamp", "unknown")
+        if isinstance(timestamp, str) and "T" in timestamp:
+            timestamp = timestamp.split("T")[0]  # Just the date
+
+        content = memory_item.get("content", str(memory_item))[:100]
+        category = memory_item.get("type", mem_type)
+
+        return f"[MEMORY] {category}:{content} ({timestamp})"
 
 
 # Singleton instance

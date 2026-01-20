@@ -405,7 +405,19 @@ def pluribus_swarm(task_description, num_agents=50, rounds=2):
         return {'error': str(e)}
 
 def remember(fact_type, content):
-    """Store important fact for future sessions"""
+    """
+    Store important fact for future sessions.
+
+    Supported types:
+    - key_fact: Important factual information
+    - project: Project info (marked as active)
+    - preference: User preference
+    - decision: Important decision made
+    - conversation_summary: Summary of a conversation
+    - project_state: Current state of a project
+    - learned_skill: New skill or technique learned
+    """
+    # Store in conversation memory (backwards compatible)
     if fact_type == 'key_fact':
         convo_memory["key_facts"].append(content)
         convo_memory["key_facts"] = convo_memory["key_facts"][-20:]
@@ -416,8 +428,45 @@ def remember(fact_type, content):
         convo_memory["user_preferences"].append(content)
         convo_memory["user_preferences"] = convo_memory["user_preferences"][-10:]
     save_conversation_memory(convo_memory)
-    console.print(f'[green]   ✓ Remembered: {content[:50]}...[/green]')
-    return {"status": "remembered", "type": fact_type}
+
+    # Also store in recursive memory (long-term)
+    try:
+        opus_memory.remember_fact(fact_type, content)
+    except Exception as e:
+        console.print(f'[dim]   (Long-term memory: {e})[/dim]')
+
+    console.print(f'[green]   ✓ Remembered [{fact_type}]: {content[:50]}...[/green]')
+    return {"status": "remembered", "type": fact_type, "stored_in": "both"}
+
+
+def search_memory(query):
+    """
+    Search Opus's long-term memory for facts, entities, conversations.
+    Use this to recall past conversations, decisions, or learned information.
+    """
+    try:
+        results = opus_memory.search_memories(query)
+        total = results.get("total_matches", 0)
+        console.print(f'[magenta]   ✓ Memory search: {total} matches for "{query}"[/magenta]')
+
+        # Format nicely for Opus
+        formatted = {
+            "query": query,
+            "total_matches": total,
+            "facts": results.get("matching_facts", [])[:10],
+            "entities": results.get("matching_entities", [])[:5],
+            "conversations": results.get("matching_conversations", [])[:3],
+            "preferences": results.get("matching_preferences", [])[:5],
+            "projects": results.get("matching_projects", [])[:5]
+        }
+
+        # Show preview
+        if formatted["facts"]:
+            console.print(f'[dim]     Facts: {len(formatted["facts"])} | Entities: {len(formatted["entities"])} | Convos: {len(formatted["conversations"])}[/dim]')
+
+        return formatted
+    except Exception as e:
+        return {"error": f"MEMORY_SEARCH_ERROR: {str(e)}"}
 
 # =============================================================================
 # TOOL DEFINITIONS FOR CLAUDE
@@ -501,14 +550,29 @@ TOOLS = [
     },
     {
         'name': 'remember',
-        'description': 'Store important fact for future sessions.',
+        'description': 'Store important fact for LONG-TERM memory. Survives sessions. Use for important info.',
         'input_schema': {
             'type': 'object',
             'properties': {
-                'fact_type': {'type': 'string', 'enum': ['key_fact', 'project', 'preference']},
-                'content': {'type': 'string'}
+                'fact_type': {
+                    'type': 'string',
+                    'enum': ['key_fact', 'project', 'preference', 'decision', 'conversation_summary', 'project_state', 'learned_skill'],
+                    'description': 'Category: key_fact=important info, project=project details, preference=user likes, decision=choices made, project_state=current status, learned_skill=new technique'
+                },
+                'content': {'type': 'string', 'description': 'What to remember. Format: "topic: details" for best recall'}
             },
             'required': ['fact_type', 'content']
+        }
+    },
+    {
+        'name': 'search_memory',
+        'description': 'Search your long-term memory. Find past facts, decisions, conversations, projects. Use to recall history.',
+        'input_schema': {
+            'type': 'object',
+            'properties': {
+                'query': {'type': 'string', 'description': 'What to search for - keywords, project names, topics'}
+            },
+            'required': ['query']
         }
     },
     {
@@ -555,6 +619,8 @@ def dispatch_tool(name, inputs):
         return pluribus_swarm(inputs.get('task_description', ''), inputs.get('num_agents', 50), inputs.get('rounds', 2))
     elif name == 'remember':
         return remember(inputs.get('fact_type', 'key_fact'), inputs.get('content', ''))
+    elif name == 'search_memory':
+        return search_memory(inputs.get('query', ''))
     elif name == 'check_tools_health':
         return check_tools_health()
     elif name == 'create_file':
@@ -605,24 +671,71 @@ When someone asks you to "explain Brain" or "what is Brain" or "tell X about Bra
 - create_file - Instantly creates files without EAI
 - check_tools_health - See whats online/offline
 - search_brain - Fast file search
+
+**MEMORY SYSTEM (RLM-style - you remember EVERYTHING):**
+- You have LONG-TERM memory that survives between sessions
+- **search_memory** - Search your memories for past facts, decisions, conversations
+- **remember** - Store important info (key_fact, project, preference, decision, project_state, learned_skill)
+- Memories auto-load into your context based on the user's query
+- Format memories as "topic: details" for better recall later
+- Your memories are shown in context as: [MEMORY] type:content (date)
 '''
 
 # =============================================================================
 # SYSTEM PROMPT
 # =============================================================================
 
-def get_system_prompt(force_conversational=False, user_query=""):
+def get_system_prompt(force_conversational=False, user_query="", session_context=None):
     mem_context = ""
-    if convo_memory.get("key_facts"):
-        mem_context = "\n\nREMEMBERED FACTS:\n" + "\n".join(f"- {f}" for f in convo_memory["key_facts"][-10:])
-    if convo_memory.get("ongoing_projects"):
-        mem_context += "\n\nONGOING PROJECTS:\n" + "\n".join(f"- {p}" for p in convo_memory["ongoing_projects"][-5:])
 
-    # RECURSIVE MEMORY - Load relevant long-term memories
+    # Session context (loaded on startup)
+    if session_context:
+        if session_context.get("recent_conversations"):
+            mem_context += "\n\n## RECENT SESSION HISTORY:"
+            for conv in session_context["recent_conversations"]:
+                ts = conv.get("timestamp", "unknown")
+                if isinstance(ts, str) and "T" in ts:
+                    ts = ts.split("T")[0]
+                mem_context += f"\n[MEMORY] conversation_summary:{conv.get('summary', 'No summary')[:100]} ({ts})"
+
+        if session_context.get("active_projects"):
+            mem_context += "\n\n## ACTIVE PROJECTS:"
+            for proj in session_context["active_projects"]:
+                mem_context += f"\n[MEMORY] project:{proj}"
+
+    # Short-term memory (current session)
+    if convo_memory.get("key_facts"):
+        mem_context += "\n\n## SESSION FACTS:\n" + "\n".join(f"[MEMORY] key_fact:{f}" for f in convo_memory["key_facts"][-10:])
+    if convo_memory.get("ongoing_projects"):
+        mem_context += "\n\n## SESSION PROJECTS:\n" + "\n".join(f"[MEMORY] project:{p}" for p in convo_memory["ongoing_projects"][-5:])
+
+    # RECURSIVE MEMORY - Load relevant long-term memories based on query
     if user_query:
+        # Get keyword-matched memories
+        try:
+            search_results = opus_memory.search_memories(user_query, limit=5)
+            if search_results.get("total_matches", 0) > 0:
+                mem_context += "\n\n## RELEVANT MEMORIES (matching your query):"
+
+                for fact in search_results.get("matching_facts", [])[:5]:
+                    ts = fact.get("timestamp", "unknown")
+                    if isinstance(ts, str) and "T" in ts:
+                        ts = ts.split("T")[0]
+                    fact_type = fact.get("type", "fact")
+                    mem_context += f"\n[MEMORY] {fact_type}:{fact.get('content', '')[:100]} ({ts})"
+
+                if search_results.get("matching_preferences"):
+                    mem_context += f"\nRelevant preferences: {', '.join(search_results['matching_preferences'][:3])}"
+
+                if search_results.get("matching_projects"):
+                    mem_context += f"\nRelevant projects: {', '.join(search_results['matching_projects'][:3])}"
+        except:
+            pass
+
+        # Also get general memory context
         long_term_memory = opus_memory.get_memory_context_string(user_query)
         if long_term_memory:
-            mem_context += f"\n\n## LONG-TERM MEMORY (I remember everything):\n{long_term_memory}"
+            mem_context += f"\n\n## LONG-TERM MEMORY SUMMARY:\n{long_term_memory}"
 
     conversational_override = ""
     if force_conversational:
@@ -637,15 +750,16 @@ DO NOT use any tools. DO NOT search for files. Just respond naturally.
 
 ## YOUR TOOLS (in order of preference):
 1. **search_brain** - Find files instantly. USE THIS FIRST instead of exploring directories.
-2. **create_file** - INSTANT file creation. Use this for simple files instead of execute_task.
-3. **get_context** - See your session state, what youre working on, cached data.
-4. **execute_task** - Command EAI (CodeLlama) for COMPLEX tasks. Can be slow.
-5. **view_brain** - Read specific files or list directories. Results are cached.
-6. **deep_think** - Complex reasoning via DeepSeek. FREE but can be slow.
-7. **pluribus_swarm** - Deploy 50-200 TinyLlama workers. FREE.
-8. **reindex_brain** - Rebuild search index after creating files.
-9. **remember** - Store facts for future sessions.
-10. **check_tools_health** - See whats online/offline. Use if tools are failing.
+2. **search_memory** - Search your LONG-TERM MEMORY for past facts, decisions, conversations.
+3. **create_file** - INSTANT file creation. Use this for simple files instead of execute_task.
+4. **get_context** - See your session state, what youre working on, cached data.
+5. **execute_task** - Command EAI (CodeLlama) for COMPLEX tasks. Can be slow.
+6. **view_brain** - Read specific files or list directories. Results are cached.
+7. **deep_think** - Complex reasoning via DeepSeek. FREE but can be slow.
+8. **pluribus_swarm** - Deploy 50-200 TinyLlama workers. FREE.
+9. **reindex_brain** - Rebuild search index after creating files.
+10. **remember** - Store facts in LONG-TERM memory. Types: key_fact, project, preference, decision, project_state, learned_skill.
+11. **check_tools_health** - See whats online/offline. Use if tools are failing.
 
 ## ERROR HANDLING:
 - EAI_TIMEOUT → Use **create_file** instead (its instant!)
@@ -725,8 +839,15 @@ def chat():
         console.print('[red]Brain server not running! Start with: python brain_server.py[/red]')
         return
 
-    # Load memory stats
+    # Load memory stats and session context
     mem_stats = opus_memory.get_full_stats()
+    session_context = opus_memory.get_session_context()
+
+    # Show what we remember from last sessions
+    if session_context.get("recent_conversations"):
+        console.print(f'[dim]Last conversations: {len(session_context["recent_conversations"])}[/dim]')
+    if session_context.get("active_projects"):
+        console.print(f'[dim]Active projects: {", ".join(session_context["active_projects"][:3])}[/dim]')
 
     console.print(Panel.fit(
         f'[bold green]👑 OPUS[/bold green] Commander\n'
@@ -790,13 +911,13 @@ def chat():
             response, error = call_claude(
                 conversation,
                 tools=None,  # Disable tools
-                system_prompt=get_system_prompt(force_conversational=True, user_query=user_input)
+                system_prompt=get_system_prompt(force_conversational=True, user_query=user_input, session_context=session_context)
             )
         else:
             response, error = call_claude(
                 conversation,
                 TOOLS,
-                system_prompt=get_system_prompt(user_query=user_input)
+                system_prompt=get_system_prompt(user_query=user_input, session_context=session_context)
             )
 
         if error:
