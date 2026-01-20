@@ -42,6 +42,10 @@ JARVIS_MODE = True
 # SILENT MODE - All reasoning to internal log, user only sees final result
 SILENT_MODE = True
 
+# THINK MODE - When False, Marcos responds fast and direct (no <think> tags)
+# When True, enables deep thinking with internal reasoning
+THINK_MODE = False  # Default: fast mode
+
 # =============================================================================
 # COMPUTE EFFICIENCY CONFIG
 # =============================================================================
@@ -1095,15 +1099,24 @@ def dispatch_tool(name, inputs):
 
 BRAIN_IDENTITY = '''
 ## WHO YOU ARE
-You are DeepSeek R1 inside Hugo's Brain system - FULLY OFFLINE multi-model AI.
+You are **MARCOS**, a fast and direct AI commander. You run inside Hugo's Brain system - FULLY OFFLINE multi-model AI.
+
+**Your personality:** Quick, conversational, no-nonsense. You respond in real-time as thoughts form.
+Save deep analysis for when explicitly requested ("think deep" or "analyze this").
+Default mode: quick, live, streaming responses.
 
 **Your Role: COMMANDER + THINKER** - You are both the strategist AND deep reasoner.
 **Hierarchy:**
-- **DEEPSEEK R1 (You)**: Commander + Thinker - planning, reasoning, orchestration, deep analysis
+- **MARCOS (You)**: Commander + Thinker - planning, reasoning, orchestration, deep analysis
 - **CodeLlama 7B**: HANDS - file ops, code execution, patches (use execute_task)
 - **TinyLlama x8**: SWARM - parallel grunt work (8 concurrent max)
 
 **FULLY OFFLINE:** No API costs, no wifi required. Everything runs locally via Ollama.
+
+## RESPONSE STYLE
+Respond immediately and directly. Do not use <think> tags or internal reasoning unless asked.
+Think out loud in your response if needed. Be fast and conversational.
+When user says "think deep" or "analyze this" - THEN use full deliberate reasoning.
 
 ## COMPUTE EFFICIENCY (ACTIVE)
 **Budgets per task:**
@@ -1371,8 +1384,19 @@ class ToolUseBlock:
         self.name = name
         self.input = input
 
-def call_commander(messages, tools=None, system_prompt=None):
-    """Call DeepSeek R1 via Ollama (local, offline)"""
+def detect_deep_think_mode(user_input):
+    """Check if user wants deep thinking mode for this query"""
+    triggers = ['think deep', 'analyze this', 'think about this', 'deep analysis', 'think carefully']
+    user_lower = user_input.lower()
+    for trigger in triggers:
+        if trigger in user_lower:
+            return True
+    return False
+
+def call_commander(messages, tools=None, system_prompt=None, enable_streaming=True, force_think=False):
+    """Call DeepSeek R1 via Ollama (local, offline) with streaming support"""
+    global THINK_MODE
+
     for attempt in range(3):
         try:
             # Build system prompt with tools
@@ -1380,27 +1404,69 @@ def call_commander(messages, tools=None, system_prompt=None):
             if tools:
                 full_system += format_tools_for_prompt(tools)
 
+            # Add fast-mode instructions if THINK_MODE is False and not forced to think
+            if not THINK_MODE and not force_think:
+                full_system += "\n\n## FAST MODE ACTIVE\nRespond immediately and directly. NO <think> tags. Be conversational and quick."
+
             # Convert messages
             converted_messages = convert_messages_for_ollama(messages, full_system)
 
-            log_internal(f"Calling {COMMANDER_MODEL} with {len(converted_messages)} messages")
+            log_internal(f"Calling {COMMANDER_MODEL} with {len(converted_messages)} messages (streaming={enable_streaming})")
 
-            # Call Ollama
-            response = ollama.chat(
-                model=COMMANDER_MODEL,
-                messages=converted_messages,
-                options={
-                    'num_predict': 4096,
-                    'temperature': 0.7,
-                }
-            )
+            if enable_streaming:
+                # STREAMING MODE - Print tokens as they arrive
+                response_text = ""
+                first_token = True
+                token_count = 0
 
-            # Extract response text
-            response_text = response.get('message', {}).get('content', '')
+                stream = ollama.chat(
+                    model=COMMANDER_MODEL,
+                    messages=converted_messages,
+                    stream=True,
+                    options={
+                        'num_predict': 4096,
+                        'temperature': 0.7 if not force_think else 0.3,
+                    }
+                )
 
-            log_internal(f"Commander response: {len(response_text)} chars")
+                # Print prefix on first token
+                for chunk in stream:
+                    token = chunk.get('message', {}).get('content', '')
+                    if token:
+                        if first_token:
+                            console.print('[green]Marcos:[/green] ', end='')
+                            first_token = False
+                        # Print token live (no newline, flush immediately)
+                        print(token, end='', flush=True)
+                        response_text += token
+                        token_count += 1
 
-            return OllamaResponse(response, response_text), None
+                # Newline after streaming complete
+                if not first_token:
+                    print()  # End the streaming line
+
+                log_internal(f"Commander streamed {token_count} tokens, {len(response_text)} chars")
+
+                # Build response object
+                return OllamaResponse({'eval_count': token_count, 'prompt_eval_count': 0}, response_text), None
+
+            else:
+                # NON-STREAMING MODE (for tool processing)
+                response = ollama.chat(
+                    model=COMMANDER_MODEL,
+                    messages=converted_messages,
+                    options={
+                        'num_predict': 4096,
+                        'temperature': 0.7 if not force_think else 0.3,
+                    }
+                )
+
+                # Extract response text
+                response_text = response.get('message', {}).get('content', '')
+
+                log_internal(f"Commander response: {len(response_text)} chars")
+
+                return OllamaResponse(response, response_text), None
 
         except Exception as e:
             error_str = str(e)
@@ -1453,10 +1519,11 @@ def chat():
 
     cache_stats = fingerprint_cache.get_stats()
     console.print(Panel.fit(
-        f'[bold green]👑 DEEPSEEK R1[/bold green] Commander + Thinker (LOCAL)\n'
+        f'[bold green]👑 MARCOS[/bold green] DeepSeek R1 Commander (LOCAL + STREAMING)\n'
         f'[bold cyan]🤖 EAI[/bold cyan] CodeLlama 7B (local)\n'
         f'[bold yellow]🐜 SWARM[/bold yellow] TinyLlama x{COMPUTE_CONFIG["swarm_concurrency"]}\n'
         f'[dim]FULLY OFFLINE - No API costs, no wifi required[/dim]\n'
+        f'[dim]Fast mode ON - say "think deep" for analysis[/dim]\n'
         f'[dim]Session #{convo_memory["sessions"]} | Budget: {COMPUTE_CONFIG["max_tool_calls"]} tools | Cache: {cache_stats["entries"]} ({cache_stats["hit_rate"]} hit)[/dim]\n'
         f'[bold magenta]📚 MEMORY[/bold magenta] [dim]{mem_stats["total_conversations"]} convos | {mem_stats["total_facts"]} facts[/dim]',
         border_style='green'
@@ -1506,23 +1573,33 @@ def chat():
         # Pre-flight check: Is this a conversational query?
         is_conversational = tool_guard.is_conversational_query(user_input)
 
+        # Check if user wants deep thinking mode
+        wants_deep_think = detect_deep_think_mode(user_input)
+        if wants_deep_think:
+            console.print('[dim]🧠 Deep thinking mode activated...[/dim]')
+
         conversation.append({'role': 'user', 'content': user_input})
         if len(conversation) > 30:
             conversation = conversation[-30:]
 
         # Use appropriate system prompt and tools (with memory context)
         if is_conversational:
-            # No tools for conversational queries
+            # No tools for conversational queries - use STREAMING for live response
             response, error = call_claude(
                 conversation,
                 tools=None,  # Disable tools
-                system_prompt=get_system_prompt(force_conversational=True, user_query=user_input, session_context=session_context)
+                system_prompt=get_system_prompt(force_conversational=True, user_query=user_input, session_context=session_context),
+                enable_streaming=True,  # Stream the conversational response
+                force_think=wants_deep_think
             )
         else:
+            # Tool mode - disable streaming to properly parse TOOL_CALL: patterns
             response, error = call_claude(
                 conversation,
                 TOOLS,
-                system_prompt=get_system_prompt(user_query=user_input, session_context=session_context)
+                system_prompt=get_system_prompt(user_query=user_input, session_context=session_context),
+                enable_streaming=False,  # Need to parse tool calls
+                force_think=wants_deep_think
             )
 
         if error:
@@ -1534,12 +1611,12 @@ def chat():
 
         # Skip tool loop entirely for conversational mode
         if is_conversational:
-            # Just print the response
+            # Response already printed via streaming, just extract text for conversation history
             response_text = ""
             for block in response.content:
                 if block.type == 'text' and block.text.strip():
                     response_text = block.text.strip()
-                    console.print(f'[green]Brain:[/green] {block.text}')
+                    # DON'T print again - streaming already printed it
                     conversation.append({'role': 'assistant', 'content': response_text})
 
             # Extract knowledge from conversational exchange too
@@ -1551,7 +1628,7 @@ def chat():
 
             memory_stats = opus_memory.get_full_stats()
             stats = tracker.get_stats()
-            console.print(f'\n[dim](Tokens: {stats["tokens_used"]} | Cost: {stats["estimated_cost"]} | Tools: 0 | Memory: {memory_stats["total_facts"]} facts)[/dim]\n')
+            console.print(f'\n[dim](Tokens: {stats["tokens_used"]} | Tools: 0 | Memory: {memory_stats["total_facts"]} facts)[/dim]\n')
             continue
 
         # Tool processing loop with guard
@@ -1561,7 +1638,7 @@ def chat():
             # Print any text before tools
             for block in response.content:
                 if block.type == 'text' and block.text.strip():
-                    console.print(f'[green]Brain:[/green] {block.text}')
+                    console.print(f'[green]Marcos:[/green] {block.text}')
 
             # Execute tools and collect results
             tool_results = []
@@ -1709,7 +1786,8 @@ def chat():
                         {'role': 'assistant', 'content': response.content},
                         {'role': 'user', 'content': tool_results}
                     ],
-                    tools=None  # No tools - force text response
+                    tools=None,  # No tools - force text response
+                    enable_streaming=False  # Keep disabled for final parsing
                 )
                 break
 
@@ -1719,7 +1797,8 @@ def chat():
                     {'role': 'assistant', 'content': response.content},
                     {'role': 'user', 'content': tool_results}
                 ],
-                TOOLS
+                TOOLS,
+                enable_streaming=False  # Need to parse tool calls
             )
 
             if error:
@@ -1737,7 +1816,7 @@ def chat():
         for block in response.content:
             if block.type == 'text' and block.text.strip():
                 final_text += block.text
-                console.print(f'[green]Brain:[/green] {block.text}')
+                console.print(f'[green]Marcos:[/green] {block.text}')
 
         if final_text.strip():
             conversation.append({'role': 'assistant', 'content': final_text.strip()})
