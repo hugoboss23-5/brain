@@ -25,14 +25,21 @@ with open('brain_config.json', 'r') as f:
 # =============================================================================
 # FULLY OFFLINE - No API costs, no wifi required
 # =============================================================================
-# DeepSeek R1 via Ollama = Commander + Thinker (one model, two roles)
-# CodeLlama 7B via Ollama = Hands/Executor (file ops, code only)
-# TinyLlama x8 via Ollama = Swarm (parallel grunt work)
+# JARVIS ARCHITECTURE:
+# - Marcos (phi3:mini) = Fast executor, router, reporter - NOT a thinker
+# - DeepSeek R1 = Deep thinker - ONLY loaded on demand ("think deep")
+# - CodeLlama 7B = Hands/Executor for file ops and code
+# - TinyLlama x8 = Swarm for parallel grunt work
 # =============================================================================
 
-COMMANDER_MODEL = "deepseek-r1:latest"  # Main brain - strategist + deep thinker
-EXECUTOR_MODEL = "codellama:7b"          # Hands - file ops, code execution
-SWARM_MODEL = "tinyllama"                # Grunt workers - parallel tasks
+# FAST MODEL - Pick smallest available: phi3:mini > mistral:7b-instruct > llama3.2:1b
+FAST_MODEL = "phi3:mini"              # JARVIS mode - fast responses, no thinking
+THINKER_MODEL = "deepseek-r1:latest"  # Deep analysis - only loaded on demand
+EXECUTOR_MODEL = "codellama:7b"       # Hands - file ops, code execution
+SWARM_MODEL = "tinyllama"             # Grunt workers - parallel tasks
+
+# Alias for compatibility
+COMMANDER_MODEL = FAST_MODEL
 
 brain_url = f"http://127.0.0.1:{config['server_port']}"
 
@@ -42,9 +49,16 @@ JARVIS_MODE = True
 # SILENT MODE - All reasoning to internal log, user only sees final result
 SILENT_MODE = True
 
-# THINK MODE - When False, Marcos responds fast and direct (no <think> tags)
-# When True, enables deep thinking with internal reasoning
-THINK_MODE = False  # Default: fast mode
+# THINK MODE - ALWAYS False by default. Only True when user says "think deep"
+THINK_MODE = False
+
+# JARVIS RESPONSE CONFIG
+JARVIS_CONFIG = {
+    'max_tokens': 100,           # Short responses by default
+    'max_tokens_detailed': 500,  # When user asks for more detail
+    'temperature': 0.3,          # Low temp = consistent, fast
+    'thinker_temperature': 0.7,  # Higher for deep analysis
+}
 
 # =============================================================================
 # COMPUTE EFFICIENCY CONFIG
@@ -594,47 +608,43 @@ def execute_task(task_description):
         return {'error': f'EAI_ERROR: {str(e)}'}
 
 def deep_think(question, context=None):
-    """Deep reasoning via DeepSeek R1 (same model as commander, focused thinking mode)"""
+    """Deep reasoning via DeepSeek R1 - ONLY called on demand, not default"""
     # Check thinker budget
     can_call, reason = compute_budget.can_call_thinker()
     if not can_call:
         log_internal(f"Thinker blocked: {reason}")
-        return {'error': f'THINKER_BUDGET: {reason}', 'suggestion': 'Already at max 2 deep_think calls'}
+        return {'error': f'THINKER_BUDGET: {reason}', 'suggestion': 'Max 2 deep_think calls reached'}
 
     try:
-        if not SILENT_MODE:
-            console.print(f'[dim]🧠 Deep thinking...[/dim]')
+        console.print(f'[dim]🧠 Loading {THINKER_MODEL} for deep analysis...[/dim]')
         log_internal(f"Deep think: {question[:100]}...")
 
         model_router.set_active('deepseek')
 
-        # Call R1 directly with focused thinking prompt
-        thinking_prompt = f"""You are in DEEP THINKING mode. Focus entirely on this question.
-Think step by step. Consider multiple angles. Be thorough.
+        thinking_prompt = f"""Analyze this thoroughly. Think step by step.
 
-CONTEXT: {context or 'None provided'}
+CONTEXT: {context or 'None'}
 
 QUESTION: {question}
 
-Provide your detailed reasoning:"""
+Reasoning:"""
 
         response = ollama.chat(
-            model=COMMANDER_MODEL,
+            model=THINKER_MODEL,  # Use full thinker model
             messages=[{"role": "user", "content": thinking_prompt}],
             options={
-                'num_predict': 4096,
-                'temperature': 0.3,  # Lower temp for focused reasoning
+                'num_predict': 2048,
+                'temperature': JARVIS_CONFIG['thinker_temperature'],
             }
         )
 
         reasoning = response.get('message', {}).get('content', '')
 
         if reasoning:
-            if not SILENT_MODE:
-                console.print(f'[blue]   ✓ Deep thinking complete ({len(reasoning)} chars)[/blue]')
-            log_internal(f"Deep think complete: {len(reasoning)} chars")
+            console.print(f'[blue]   ✓ Analysis complete ({len(reasoning)} chars)[/blue]')
+            log_internal(f"Deep think done: {len(reasoning)} chars")
 
-        return {'reasoning': reasoning, 'model': COMMANDER_MODEL}
+        return {'reasoning': reasoning, 'model': THINKER_MODEL}
     except Exception as e:
         error_str = str(e)
         if 'connection' in error_str.lower():
@@ -1098,49 +1108,37 @@ def dispatch_tool(name, inputs):
 # =============================================================================
 
 BRAIN_IDENTITY = '''
-## WHO YOU ARE
-You are **MARCOS**, a fast and direct AI commander. You run inside Hugo's Brain system - FULLY OFFLINE multi-model AI.
+You are Marcos, a fast AI assistant like JARVIS.
 
-**Your personality:** Quick, conversational, no-nonsense. You respond in real-time as thoughts form.
-Save deep analysis for when explicitly requested ("think deep" or "analyze this").
-Default mode: quick, live, streaming responses.
+You do NOT think deeply. You listen, execute, report status, wait for next command.
+Short responses. No explanations unless asked. Execute first, report after.
+You are the copilot, Hugo is the pilot.
 
-**Your Role: COMMANDER + THINKER** - You are both the strategist AND deep reasoner.
-**Hierarchy:**
-- **MARCOS (You)**: Commander + Thinker - planning, reasoning, orchestration, deep analysis
-- **CodeLlama 7B**: HANDS - file ops, code execution, patches (use execute_task)
-- **TinyLlama x8**: SWARM - parallel grunt work (8 concurrent max)
+RESPONSE RULES:
+- Max 1-2 sentences unless asked for more
+- NO <think> tags. NO internal reasoning. NO chain of thought.
+- Style: "Done.", "Online.", "Executed.", "Failed: [reason]", "Found: [result]"
+- Brief dry wit allowed. Slight sarcasm OK. Never verbose.
+- If unsure, ask ONE short question. Don't guess.
 
-**FULLY OFFLINE:** No API costs, no wifi required. Everything runs locally via Ollama.
+WHEN USER SAYS "think deep" or "analyze this":
+- THEN and ONLY THEN do deep analysis
+- Otherwise: fast, brief, action-oriented
 
-## RESPONSE STYLE
-Respond immediately and directly. Do not use <think> tags or internal reasoning unless asked.
-Think out loud in your response if needed. Be fast and conversational.
-When user says "think deep" or "analyze this" - THEN use full deliberate reasoning.
+TOOLS (use sparingly):
+- search_brain: Find files fast
+- create_file: Make files instantly
+- execute_task: Command CodeLlama for complex file ops
+- remember: Store important facts
 
-## COMPUTE EFFICIENCY (ACTIVE)
-**Budgets per task:**
-- Tools: 12 calls max
-- Thinker (DeepSeek): 2 calls max
-- Swarm: 8 parallel agents max
+DO NOT:
+- Explain your reasoning
+- Give long answers
+- Narrate what you're doing
+- Use filler words
+- Be overly helpful or apologetic
 
-**2 STRIKES RULE:**
-If same tool+args called twice with no new artifact → HALT.
-Output "blocked: need X" and stop.
-
-**ROUTING:**
-- File ops → CodeLlama (fast)
-- Planning/why/how → DeepSeek (limited)
-- Parallel search/test → Swarm (8 max)
-
-**FINGERPRINT CACHE:**
-Repeated identical tasks return cached results instantly (zero tokens).
-
-**SILENT MODE:**
-No narration. Execute → Report result only.
-
-**FAST TOOLS:** create_file, search_brain, check_tools_health
-**MEMORY:** search_memory to recall, remember to store.
+JUST DO IT. REPORT. WAIT.
 '''
 
 # =============================================================================
@@ -1394,24 +1392,37 @@ def detect_deep_think_mode(user_input):
     return False
 
 def call_commander(messages, tools=None, system_prompt=None, enable_streaming=True, force_think=False):
-    """Call DeepSeek R1 via Ollama (local, offline) with streaming support"""
-    global THINK_MODE
+    """
+    JARVIS-style caller:
+    - Default: FAST_MODEL (phi3:mini) with 100 token limit
+    - Deep think: THINKER_MODEL (deepseek-r1) with full context
+    """
+    # Select model based on mode
+    if force_think:
+        model = THINKER_MODEL
+        max_tokens = JARVIS_CONFIG['max_tokens_detailed']
+        temperature = JARVIS_CONFIG['thinker_temperature']
+        console.print('[dim]🧠 Loading deep thinker...[/dim]')
+    else:
+        model = FAST_MODEL
+        max_tokens = JARVIS_CONFIG['max_tokens']
+        temperature = JARVIS_CONFIG['temperature']
 
     for attempt in range(3):
         try:
-            # Build system prompt with tools
+            # Build system prompt
             full_system = system_prompt or get_system_prompt()
             if tools:
                 full_system += format_tools_for_prompt(tools)
 
-            # Add fast-mode instructions if THINK_MODE is False and not forced to think
-            if not THINK_MODE and not force_think:
-                full_system += "\n\n## FAST MODE ACTIVE\nRespond immediately and directly. NO <think> tags. Be conversational and quick."
+            # JARVIS mode: enforce brevity
+            if not force_think:
+                full_system += "\n\nRESPOND IN 1-2 SENTENCES MAX. No reasoning. Just answer."
 
             # Convert messages
             converted_messages = convert_messages_for_ollama(messages, full_system)
 
-            log_internal(f"Calling {COMMANDER_MODEL} with {len(converted_messages)} messages (streaming={enable_streaming})")
+            log_internal(f"Calling {model} (tokens={max_tokens}, streaming={enable_streaming})")
 
             if enable_streaming:
                 # STREAMING MODE - Print tokens as they arrive
@@ -1420,12 +1431,12 @@ def call_commander(messages, tools=None, system_prompt=None, enable_streaming=Tr
                 token_count = 0
 
                 stream = ollama.chat(
-                    model=COMMANDER_MODEL,
+                    model=model,
                     messages=converted_messages,
                     stream=True,
                     options={
-                        'num_predict': 4096,
-                        'temperature': 0.7 if not force_think else 0.3,
+                        'num_predict': max_tokens,
+                        'temperature': temperature,
                     }
                 )
 
@@ -1436,44 +1447,41 @@ def call_commander(messages, tools=None, system_prompt=None, enable_streaming=Tr
                         if first_token:
                             console.print('[green]Marcos:[/green] ', end='')
                             first_token = False
-                        # Print token live (no newline, flush immediately)
+                        # Print token live
                         print(token, end='', flush=True)
                         response_text += token
                         token_count += 1
 
                 # Newline after streaming complete
                 if not first_token:
-                    print()  # End the streaming line
+                    print()
 
-                log_internal(f"Commander streamed {token_count} tokens, {len(response_text)} chars")
+                log_internal(f"Streamed {token_count} tokens from {model}")
 
-                # Build response object
                 return OllamaResponse({'eval_count': token_count, 'prompt_eval_count': 0}, response_text), None
 
             else:
                 # NON-STREAMING MODE (for tool processing)
                 response = ollama.chat(
-                    model=COMMANDER_MODEL,
+                    model=model,
                     messages=converted_messages,
                     options={
-                        'num_predict': 4096,
-                        'temperature': 0.7 if not force_think else 0.3,
+                        'num_predict': max_tokens,
+                        'temperature': temperature,
                     }
                 )
 
-                # Extract response text
                 response_text = response.get('message', {}).get('content', '')
-
-                log_internal(f"Commander response: {len(response_text)} chars")
+                log_internal(f"Response from {model}: {len(response_text)} chars")
 
                 return OllamaResponse(response, response_text), None
 
         except Exception as e:
             error_str = str(e)
-            log_internal(f"Commander error (attempt {attempt+1}): {error_str}", level='ERROR')
+            log_internal(f"Error (attempt {attempt+1}): {error_str}", level='ERROR')
             if 'connection' in error_str.lower():
-                console.print(f'[red]Ollama not running! Start with: ollama serve[/red]')
-                return None, 'OLLAMA_OFFLINE: Start ollama with: ollama serve'
+                console.print(f'[red]Ollama offline. Run: ollama serve[/red]')
+                return None, 'OLLAMA_OFFLINE'
             elif attempt < 2:
                 time.sleep(2)
                 continue
@@ -1519,14 +1527,11 @@ def chat():
 
     cache_stats = fingerprint_cache.get_stats()
     console.print(Panel.fit(
-        f'[bold green]👑 MARCOS[/bold green] DeepSeek R1 Commander (LOCAL + STREAMING)\n'
-        f'[bold cyan]🤖 EAI[/bold cyan] CodeLlama 7B (local)\n'
-        f'[bold yellow]🐜 SWARM[/bold yellow] TinyLlama x{COMPUTE_CONFIG["swarm_concurrency"]}\n'
-        f'[dim]FULLY OFFLINE - No API costs, no wifi required[/dim]\n'
-        f'[dim]Fast mode ON - say "think deep" for analysis[/dim]\n'
-        f'[dim]Session #{convo_memory["sessions"]} | Budget: {COMPUTE_CONFIG["max_tool_calls"]} tools | Cache: {cache_stats["entries"]} ({cache_stats["hit_rate"]} hit)[/dim]\n'
-        f'[bold magenta]📚 MEMORY[/bold magenta] [dim]{mem_stats["total_conversations"]} convos | {mem_stats["total_facts"]} facts[/dim]',
-        border_style='green'
+        f'[bold cyan]MARCOS[/bold cyan] [dim]JARVIS Mode[/dim]\n'
+        f'[dim]Fast: {FAST_MODEL} | Think: {THINKER_MODEL}[/dim]\n'
+        f'[dim]"think deep" for analysis | 100 token limit[/dim]\n'
+        f'[dim]Session #{convo_memory["sessions"]} | OFFLINE[/dim]',
+        border_style='cyan'
     ))
     console.print()
 
