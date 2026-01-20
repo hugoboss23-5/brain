@@ -25,21 +25,22 @@ with open('brain_config.json', 'r') as f:
 # =============================================================================
 # FULLY OFFLINE - No API costs, no wifi required
 # =============================================================================
-# JARVIS ARCHITECTURE:
-# - Marcos (phi3:mini) = Fast executor, router, reporter - NOT a thinker
-# - DeepSeek R1 = Deep thinker - ONLY loaded on demand ("think deep")
-# - CodeLlama 7B = Hands/Executor for file ops and code
-# - TinyLlama x8 = Swarm for parallel grunt work
+# JARVIS ARCHITECTURE - ON-DEMAND MODEL LOADING:
+# - VOICE (tinyllama) = Always resident, fast router/commander
+# - HANDS (codellama:7b) = Load on demand for code/file ops, then unload
+# - THINKER (deepseek-r1) = Load on demand for "think deep", then unload
 # =============================================================================
 
-# FAST MODEL - Pick smallest available: phi3:mini > mistral:7b-instruct > llama3.2:1b
-FAST_MODEL = "phi3:mini"              # JARVIS mode - fast responses, no thinking
-THINKER_MODEL = "deepseek-r1:latest"  # Deep analysis - only loaded on demand
-EXECUTOR_MODEL = "codellama:7b"       # Hands - file ops, code execution
-SWARM_MODEL = "tinyllama"             # Grunt workers - parallel tasks
+# MODEL CONFIG - Only VOICE stays resident, others load on demand
+VOICE_MODEL = "tinyllama:latest"      # 637MB - always on, fast responses
+HANDS_MODEL = "codellama:7b"          # Load on demand for code/files
+THINKER_MODEL = "deepseek-r1:latest"  # Load on demand for deep analysis
 
-# Alias for compatibility
-COMMANDER_MODEL = FAST_MODEL
+# Aliases for compatibility
+FAST_MODEL = VOICE_MODEL
+COMMANDER_MODEL = VOICE_MODEL
+EXECUTOR_MODEL = HANDS_MODEL
+SWARM_MODEL = "tinyllama"
 
 brain_url = f"http://127.0.0.1:{config['server_port']}"
 
@@ -100,6 +101,85 @@ def log_internal(message, level='INFO'):
                 f.write(f"[{timestamp}] [{level}] {message}\n")
         except:
             pass
+
+# =============================================================================
+# MODEL MANAGER - On-demand loading/unloading
+# =============================================================================
+
+class ModelManager:
+    """Manage model loading - only VOICE stays resident, others load on demand"""
+
+    def __init__(self):
+        self.current_model = None
+
+    def get_loaded_models(self):
+        """Check which models are currently loaded via 'ollama ps'"""
+        try:
+            import subprocess
+            result = subprocess.run(['ollama', 'ps'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                models = []
+                for line in lines[1:]:  # Skip header
+                    if line.strip():
+                        parts = line.split()
+                        if parts:
+                            models.append(parts[0])
+                return models
+            return []
+        except:
+            return []
+
+    def unload_model(self, model_name):
+        """Unload a model via 'ollama stop'"""
+        try:
+            import subprocess
+            log_internal(f"Unloading {model_name}...")
+            result = subprocess.run(['ollama', 'stop', model_name], capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                log_internal(f"Unloaded {model_name}")
+                return True
+            return False
+        except:
+            return False
+
+    def ensure_model(self, target_model, keep_voice=True):
+        """
+        Ensure target model is ready. Unload others except VOICE if keep_voice=True.
+        Returns True if model is ready.
+        """
+        loaded = self.get_loaded_models()
+
+        # If target already loaded, we're good
+        if target_model in loaded:
+            self.current_model = target_model
+            return True
+
+        # Unload non-voice models to free memory
+        for model in loaded:
+            if keep_voice and VOICE_MODEL in model:
+                continue  # Keep voice resident
+            if model != target_model:
+                console.print(f'[dim]   ↳ Unloading {model}...[/dim]')
+                self.unload_model(model)
+
+        # Target will auto-load on first call
+        self.current_model = target_model
+        log_internal(f"Ready to load {target_model}")
+        return True
+
+    def swap_to(self, target_model):
+        """Swap to target model, unloading current if different"""
+        if self.current_model and self.current_model != target_model:
+            # Check if we need to unload (non-voice model)
+            if self.current_model != VOICE_MODEL:
+                self.unload_model(self.current_model)
+
+        self.ensure_model(target_model)
+        return True
+
+# Global model manager
+model_manager = ModelManager()
 
 # =============================================================================
 # FINGERPRINT CACHE - Zero new tokens for repeated tasks
@@ -608,7 +688,7 @@ def execute_task(task_description):
         return {'error': f'EAI_ERROR: {str(e)}'}
 
 def deep_think(question, context=None):
-    """Deep reasoning via DeepSeek R1 - ONLY called on demand, not default"""
+    """Deep reasoning via DeepSeek R1 - load on demand, unload after"""
     # Check thinker budget
     can_call, reason = compute_budget.can_call_thinker()
     if not can_call:
@@ -616,9 +696,11 @@ def deep_think(question, context=None):
         return {'error': f'THINKER_BUDGET: {reason}', 'suggestion': 'Max 2 deep_think calls reached'}
 
     try:
-        console.print(f'[dim]🧠 Loading {THINKER_MODEL} for deep analysis...[/dim]')
+        console.print(f'[dim]🧠 Loading {THINKER_MODEL}...[/dim]')
         log_internal(f"Deep think: {question[:100]}...")
 
+        # Load thinker model on demand
+        model_manager.ensure_model(THINKER_MODEL, keep_voice=True)
         model_router.set_active('deepseek')
 
         thinking_prompt = f"""Analyze this thoroughly. Think step by step.
@@ -630,7 +712,7 @@ QUESTION: {question}
 Reasoning:"""
 
         response = ollama.chat(
-            model=THINKER_MODEL,  # Use full thinker model
+            model=THINKER_MODEL,
             messages=[{"role": "user", "content": thinking_prompt}],
             options={
                 'num_predict': 2048,
@@ -641,8 +723,12 @@ Reasoning:"""
         reasoning = response.get('message', {}).get('content', '')
 
         if reasoning:
-            console.print(f'[blue]   ✓ Analysis complete ({len(reasoning)} chars)[/blue]')
+            console.print(f'[blue]   ✓ Done ({len(reasoning)} chars)[/blue]')
             log_internal(f"Deep think done: {len(reasoning)} chars")
+
+        # Unload thinker to free memory, keep voice ready
+        console.print(f'[dim]   ↳ Unloading thinker...[/dim]')
+        model_manager.unload_model(THINKER_MODEL)
 
         return {'reasoning': reasoning, 'model': THINKER_MODEL}
     except Exception as e:
@@ -1393,20 +1479,23 @@ def detect_deep_think_mode(user_input):
 
 def call_commander(messages, tools=None, system_prompt=None, enable_streaming=True, force_think=False):
     """
-    JARVIS-style caller:
-    - Default: FAST_MODEL (phi3:mini) with 100 token limit
-    - Deep think: THINKER_MODEL (deepseek-r1) with full context
+    JARVIS-style caller with on-demand model loading:
+    - Default: VOICE_MODEL (tinyllama) - always resident
+    - Deep think: THINKER_MODEL (deepseek-r1) - load on demand, unload after
     """
     # Select model based on mode
     if force_think:
         model = THINKER_MODEL
         max_tokens = JARVIS_CONFIG['max_tokens_detailed']
         temperature = JARVIS_CONFIG['thinker_temperature']
-        console.print('[dim]🧠 Loading deep thinker...[/dim]')
+        console.print('[dim]🧠 Loading thinker (deepseek-r1)...[/dim]')
+        model_manager.ensure_model(THINKER_MODEL, keep_voice=True)
     else:
-        model = FAST_MODEL
+        model = VOICE_MODEL
         max_tokens = JARVIS_CONFIG['max_tokens']
         temperature = JARVIS_CONFIG['temperature']
+        # Voice model should always be ready, but ensure it
+        model_manager.ensure_model(VOICE_MODEL)
 
     for attempt in range(3):
         try:
@@ -1527,8 +1616,9 @@ def chat():
 
     cache_stats = fingerprint_cache.get_stats()
     console.print(Panel.fit(
-        f'[bold cyan]MARCOS[/bold cyan] [dim]JARVIS Mode[/dim]\n'
-        f'[dim]Fast: {FAST_MODEL} | Think: {THINKER_MODEL}[/dim]\n'
+        f'[bold cyan]MARCOS[/bold cyan] [dim]JARVIS Mode | On-Demand Loading[/dim]\n'
+        f'[dim]Voice: {VOICE_MODEL} (resident)[/dim]\n'
+        f'[dim]Hands: {HANDS_MODEL} | Think: {THINKER_MODEL}[/dim]\n'
         f'[dim]"think deep" for analysis | 100 token limit[/dim]\n'
         f'[dim]Session #{convo_memory["sessions"]} | OFFLINE[/dim]',
         border_style='cyan'
