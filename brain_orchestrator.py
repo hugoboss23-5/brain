@@ -224,8 +224,12 @@ def execute_task(task_description):
         if result.get('edited'):
             console.print(f'[blue]   ✓ Edited: {", ".join(result["edited"])}[/blue]')
         return result
+    except requests.exceptions.Timeout:
+        return {'error': 'EAI_TIMEOUT: CodeLlama took too long (>120s). Try a simpler task or use create_file for basic file creation.', 'suggestion': 'Use create_file tool instead for simple file creation.'}
+    except requests.exceptions.ConnectionError:
+        return {'error': 'EAI_OFFLINE: Cannot reach Brain server. Is brain_server.py running?', 'suggestion': 'Start the server with: python brain_server.py'}
     except Exception as e:
-        return {'error': str(e)}
+        return {'error': f'EAI_ERROR: {str(e)}'}
 
 def deep_think(question, context=None):
     """Consult DeepSeek R1 for complex reasoning"""
@@ -239,8 +243,12 @@ def deep_think(question, context=None):
         if result.get('reasoning'):
             console.print(f'[blue]   ✓ Reasoning complete ({len(result["reasoning"])} chars)[/blue]')
         return result
+    except requests.exceptions.Timeout:
+        return {'error': 'THINKER_TIMEOUT: DeepSeek R1 took too long (>180s). The question may be too complex or the model is busy.', 'suggestion': 'Try breaking down the question into smaller parts.'}
+    except requests.exceptions.ConnectionError:
+        return {'error': 'THINKER_OFFLINE: Cannot reach Brain server. Is brain_server.py running?'}
     except Exception as e:
-        return {'error': str(e)}
+        return {'error': f'THINKER_ERROR: {str(e)}'}
 
 def search_brain(query):
     """Search files by name or content without directory traversal"""
@@ -249,8 +257,12 @@ def search_brain(query):
         result = r.json()
         console.print(f'[cyan]   ✓ Found {result.get("count", 0)} files matching "{query}"[/cyan]')
         return result
+    except requests.exceptions.Timeout:
+        return {'error': 'SEARCH_TIMEOUT: Search took too long (>30s).'}
+    except requests.exceptions.ConnectionError:
+        return {'error': 'SEARCH_OFFLINE: Cannot reach Brain server.'}
     except Exception as e:
-        return {'error': str(e)}
+        return {'error': f'SEARCH_ERROR: {str(e)}'}
 
 def get_context():
     """Get full session context - what you're working on, recent files, cached dirs"""
@@ -259,8 +271,85 @@ def get_context():
         result = r.json()
         console.print(f'[cyan]   ✓ Context loaded[/cyan]')
         return result
+    except requests.exceptions.Timeout:
+        return {'error': 'CONTEXT_TIMEOUT: Server slow to respond.'}
+    except requests.exceptions.ConnectionError:
+        return {'error': 'SERVER_OFFLINE: Cannot reach Brain server. Is brain_server.py running?'}
     except Exception as e:
-        return {'error': str(e)}
+        return {'error': f'CONTEXT_ERROR: {str(e)}'}
+
+def check_tools_health():
+    """Quick health check - see which tools are online and responsive"""
+    console.print(f'[dim]🔍 Checking tool health...[/dim]')
+    health = {
+        'server': 'OFFLINE',
+        'eai': 'UNKNOWN',
+        'thinker': 'UNKNOWN',
+        'search': 'UNKNOWN',
+        'all_ok': False
+    }
+
+    # Check server
+    try:
+        r = requests.get(f'{brain_url}/status', timeout=5)
+        if r.status_code == 200:
+            health['server'] = 'ONLINE'
+            status = r.json()
+            health['ollama'] = status.get('ollama', 'unknown')
+            health['models'] = status.get('models', [])
+            health['tasks_completed'] = status.get('memory', {}).get('tasks', 0)
+    except:
+        health['server'] = 'OFFLINE'
+        console.print(f'[red]   ✗ Server OFFLINE[/red]')
+        return health
+
+    # Check search (fast)
+    try:
+        r = requests.post(f'{brain_url}/search', json={'query': 'test'}, timeout=5)
+        health['search'] = 'ONLINE' if r.status_code == 200 else 'ERROR'
+    except:
+        health['search'] = 'SLOW/OFFLINE'
+
+    # EAI and Thinker status from Ollama
+    if health['ollama'] == 'online':
+        health['eai'] = 'READY'
+        health['thinker'] = 'READY'
+    else:
+        health['eai'] = 'OLLAMA_OFFLINE'
+        health['thinker'] = 'OLLAMA_OFFLINE'
+
+    health['all_ok'] = (health['server'] == 'ONLINE' and health['search'] == 'ONLINE' and health['ollama'] == 'online')
+
+    status_icon = '✓' if health['all_ok'] else '⚠'
+    console.print(f'[{"green" if health["all_ok"] else "yellow"}]   {status_icon} Server: {health["server"]} | Ollama: {health.get("ollama", "?")} | Search: {health["search"]}[/{"green" if health["all_ok"] else "yellow"}]')
+
+    return health
+
+def create_file(path, content):
+    """
+    Directly create a file WITHOUT going through EAI.
+    Use this for simple file creation when EAI is slow/busy.
+    """
+    try:
+        # Get brain path from config
+        full_path = os.path.join(config['brain_path'], path)
+
+        # Create directories if needed
+        dir_name = os.path.dirname(full_path)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
+
+        # Write the file
+        with open(full_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        console.print(f'[green]   ✓ Created: {path} ({len(content)} chars)[/green]')
+        return {'status': 'created', 'path': path, 'size': len(content)}
+
+    except PermissionError:
+        return {'error': f'PERMISSION_DENIED: Cannot write to {path}'}
+    except Exception as e:
+        return {'error': f'CREATE_ERROR: {str(e)}'}
 
 def reindex_brain():
     """Rebuild the file index for search"""
@@ -395,6 +484,26 @@ TOOLS = [
             },
             'required': ['fact_type', 'content']
         }
+    },
+    {
+        'name': 'check_tools_health',
+        'description': 'Quick health check - see if server, EAI, thinker, search are online. Use FIRST if tools are failing.',
+        'input_schema': {
+            'type': 'object',
+            'properties': {}
+        }
+    },
+    {
+        'name': 'create_file',
+        'description': 'Directly create a file WITHOUT using EAI. FAST. Use when EAI is slow/timing out for simple file creation.',
+        'input_schema': {
+            'type': 'object',
+            'properties': {
+                'path': {'type': 'string', 'description': 'File path relative to brain root (e.g., "notes/ideas.txt")'},
+                'content': {'type': 'string', 'description': 'The content to write to the file'}
+            },
+            'required': ['path', 'content']
+        }
     }
 ]
 
@@ -420,6 +529,10 @@ def dispatch_tool(name, inputs):
         return pluribus_swarm(inputs.get('task_description', ''), inputs.get('num_agents', 50), inputs.get('rounds', 2))
     elif name == 'remember':
         return remember(inputs.get('fact_type', 'key_fact'), inputs.get('content', ''))
+    elif name == 'check_tools_health':
+        return check_tools_health()
+    elif name == 'create_file':
+        return create_file(inputs.get('path', ''), inputs.get('content', ''))
     else:
         return {'error': f'Unknown tool: {name}'}
 
@@ -454,6 +567,18 @@ When someone asks you to "explain Brain" or "what is Brain" or "tell X about Bra
 - If you hit the limit, STOP and respond with what you have
 - Never call the same tool with the same arguments twice
 - Never call the same tool more than 3 times in a row
+
+**WHEN TOOLS FAIL:**
+- If you see EAI_TIMEOUT: Use **create_file** instead for simple file creation (its instant!)
+- If you see THINKER_TIMEOUT: Break the question into smaller parts
+- If you see SERVER_OFFLINE: Tell Hugo to start brain_server.py
+- Use **check_tools_health** FIRST if multiple tools are failing
+- Error codes like EAI_TIMEOUT, SEARCH_OFFLINE tell you exactly what went wrong
+
+**FAST TOOLS (always work):**
+- create_file - Instantly creates files without EAI
+- check_tools_health - See whats online/offline
+- search_brain - Fast file search
 '''
 
 # =============================================================================
@@ -486,29 +611,37 @@ DO NOT use any tools. DO NOT search for files. Just respond naturally.
 
 ## YOUR TOOLS (in order of preference):
 1. **search_brain** - Find files instantly. USE THIS FIRST instead of exploring directories.
-2. **get_context** - See your session state, what youre working on, cached data.
-3. **execute_task** - Command EAI (CodeLlama) to create/edit files. FREE.
-4. **view_brain** - Read specific files or list directories. Results are cached.
-5. **deep_think** - Complex reasoning via DeepSeek. FREE.
-6. **pluribus_swarm** - Deploy 50-200 TinyLlama workers. FREE.
-7. **reindex_brain** - Rebuild search index after creating files.
-8. **remember** - Store facts for future sessions.
+2. **create_file** - INSTANT file creation. Use this for simple files instead of execute_task.
+3. **get_context** - See your session state, what youre working on, cached data.
+4. **execute_task** - Command EAI (CodeLlama) for COMPLEX tasks. Can be slow.
+5. **view_brain** - Read specific files or list directories. Results are cached.
+6. **deep_think** - Complex reasoning via DeepSeek. FREE but can be slow.
+7. **pluribus_swarm** - Deploy 50-200 TinyLlama workers. FREE.
+8. **reindex_brain** - Rebuild search index after creating files.
+9. **remember** - Store facts for future sessions.
+10. **check_tools_health** - See whats online/offline. Use if tools are failing.
+
+## ERROR HANDLING:
+- EAI_TIMEOUT → Use **create_file** instead (its instant!)
+- THINKER_TIMEOUT → Break question into smaller parts
+- SERVER_OFFLINE → Tell Hugo to run brain_server.py
+- If multiple tools fail → Use **check_tools_health** first
 
 ## RULES:
 1. After EVERY tool call, tell Hugo the result in 1 sentence.
 2. NEVER explore directories blindly. Use search_brain first.
 3. NEVER ask Hugo to confirm file creation. Trust the system.
 4. Be concise. Your tokens cost money. Tools are FREE.
-5. When EAI creates files, report what was created and move on.
-6. If a tool returns an error, tell Hugo and try a different approach.
+5. When creating simple files, use **create_file** not execute_task.
+6. If a tool returns an error, READ THE ERROR CODE and adapt.
 7. **MAX 15 TOOL CALLS** per response. If you approach the limit, STOP and respond.
 8. **NEVER** call the same tool with identical arguments twice.
 9. **NEVER** call the same tool more than 3 times consecutively.
 
 ## EFFICIENCY:
+- create_file > execute_task for simple file creation
 - search_brain > view_brain for finding files
 - get_context shows your cached directories - dont re-list them
-- execute_task handles create AND edit - one call per task
 - Dont narrate what youre about to do. Just do it.
 {mem_context}
 {conversational_override}
