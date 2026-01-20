@@ -64,6 +64,18 @@ def remember(fact_type, content):
     print(f"   ✓ Remembered [{fact_type}]: {content[:50]}...")
     return {"status": "remembered", "type": fact_type}
 
+def remember_batch(facts):
+    """Store multiple facts at once - more efficient than multiple remember calls"""
+    results = []
+    for fact in facts:
+        fact_type = fact.get('fact_type', 'key_fact')
+        content = fact.get('content', '')
+        if content:
+            result = remember(fact_type, content)
+            results.append(result)
+    print(f"   ✓ Batch remembered {len(results)} facts")
+    return {"status": "batch_remembered", "count": len(results)}
+
 def search_memory(query):
     """Search long-term memory"""
     try:
