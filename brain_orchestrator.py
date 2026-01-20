@@ -18,12 +18,17 @@ with open('brain_config.json', 'r') as f:
 # =============================================================================
 # CONFIG
 # =============================================================================
-MODEL = "tinyllama:latest"
+MODEL = "qwen2.5-coder:7b"
 THINKER_MODEL = "deepseek-r1:latest"
 brain_url = f"http://127.0.0.1:{config['server_port']}"
 
 CONVO_MEMORY_FILE = "system/conversation_memory.json"
-SYSTEM_PROMPT = "You are Marcos. Be direct. Answer in 1-2 sentences."
+SYSTEM_PROMPT = """You are Marcos, an AI inside Hugo's Brain system. You have these abilities: search_brain (find files), create_file (make files), search_memory (recall past conversations), remember (store facts), execute_task (run code via CodeLlama), deep_think (complex analysis). When Hugo asks you to do something, you do it and confirm what happened. When he asks questions, answer directly. You're not a generic AI - you live in a codebase and can interact with it. Be direct, 1-3 sentences max."""
+
+# Hardcoded responses for identity/capability questions
+CAPABILITIES_RESPONSE = """I can: search_brain (find files), create_file (make files), search_memory (recall past conversations), remember (store facts), execute_task (run code), deep_think (complex analysis). I live in your Brain codebase and can interact with it."""
+
+IDENTITY_RESPONSE = """I'm Marcos, your AI assistant inside the Brain system. I run on qwen2.5-coder locally via Ollama. I can search files, create files, remember things, and execute code. I'm not a cloud AI - I live in your codebase."""
 
 # =============================================================================
 # CONVERSATION MEMORY (survives sessions)
@@ -44,7 +49,7 @@ def save_conversation_memory(mem):
 convo_memory = load_conversation_memory()
 
 # =============================================================================
-# CORE FUNCTIONS (kept from original)
+# CORE FUNCTIONS
 # =============================================================================
 def remember(fact_type, content):
     """Store fact in both short-term and long-term memory"""
@@ -145,11 +150,83 @@ def deep_think(question):
         return {'error': str(e)}
 
 # =============================================================================
-# INTENT DETECTION (code-based, not model)
+# CONTEXT BUILDER
+# =============================================================================
+def build_context():
+    """Build context string with recent memory and session info"""
+    context_parts = []
+
+    # Session info
+    context_parts.append(f"[Session #{convo_memory.get('sessions', 1)}]")
+
+    # Recent facts (last 5)
+    recent_facts = convo_memory.get("key_facts", [])[-5:]
+    if recent_facts:
+        context_parts.append(f"[Recent facts: {'; '.join(recent_facts)}]")
+
+    # Active projects
+    projects = convo_memory.get("ongoing_projects", [])[-3:]
+    if projects:
+        context_parts.append(f"[Projects: {'; '.join(projects)}]")
+
+    return " ".join(context_parts)
+
+def format_result_context(intent, result):
+    """Format result into context for response"""
+    if not result:
+        return None
+
+    if result.get('error'):
+        return f"Action failed: {result['error']}"
+
+    if intent == 'search':
+        count = result.get('count', 0)
+        files = result.get('files', [])[:3]
+        file_names = [f.get('name', f) if isinstance(f, dict) else str(f) for f in files]
+        return f"Found {count} files: {', '.join(file_names)}" if file_names else f"Found {count} files"
+
+    if intent == 'create_file':
+        return f"Created {result.get('path', 'file')}"
+
+    if intent == 'remember':
+        return "Stored that in memory."
+
+    if intent == 'search_memory':
+        total = result.get('total', 0)
+        facts = result.get('facts', [])[:3]
+        if facts:
+            fact_texts = [f.get('content', str(f))[:50] for f in facts]
+            return f"Found {total} memories: {'; '.join(fact_texts)}"
+        return f"Found {total} memories"
+
+    if intent == 'execute':
+        created = result.get('created', [])
+        edited = result.get('edited', [])
+        parts = []
+        if created: parts.append(f"Created: {', '.join(created)}")
+        if edited: parts.append(f"Edited: {', '.join(edited)}")
+        return ". ".join(parts) if parts else "Task executed"
+
+    if intent == 'deep_think':
+        return result.get('reasoning', '')[:500]
+
+    return None
+
+# =============================================================================
+# INTENT DETECTION (code-based)
 # =============================================================================
 def detect_intent(text):
     """Detect intent from keywords"""
     t = text.lower()
+
+    # Identity questions - hardcoded response
+    if any(w in t for w in ['who are you', 'what are you', 'are you marcos', 'your name']):
+        return 'identity'
+
+    # Capability questions - hardcoded response
+    if any(w in t for w in ['can you', 'what can you do', 'abilities', 'capabilities', 'what do you do']):
+        return 'capabilities'
+
     if any(w in t for w in ['remember', 'store', 'save fact', 'note that']):
         return 'remember'
     if any(w in t for w in ['recall', 'what do you remember', 'search memory']):
@@ -169,16 +246,21 @@ def detect_intent(text):
 # =============================================================================
 # STREAMING RESPONSE
 # =============================================================================
-def stream_response(prompt, check_answer=False, original_question=None):
-    """Stream response from tinyllama"""
+def stream_response(prompt, context=None):
+    """Stream response from model with optional context"""
+    # Build full prompt with context
+    full_prompt = prompt
+    if context:
+        full_prompt = f"{context}\n\nHugo: {prompt}"
+
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": prompt}
+        {"role": "user", "content": full_prompt}
     ]
     response_text = ""
     try:
         stream = ollama.chat(model=MODEL, messages=messages, stream=True,
-                            options={'num_predict': 150, 'temperature': 0.3})
+                            options={'num_predict': 200, 'temperature': 0.4})
         print("Marcos: ", end="", flush=True)
         for chunk in stream:
             token = chunk.get('message', {}).get('content', '')
@@ -189,29 +271,7 @@ def stream_response(prompt, check_answer=False, original_question=None):
     except Exception as e:
         print(f"Error: {e}")
         return None
-
-    # CHECK step for questions
-    if check_answer and original_question and response_text:
-        if not check_response_quality(original_question, response_text):
-            print("[retrying with more focus...]")
-            return stream_response(f"Be more direct. Actually answer: {original_question}", False)
-
     return response_text
-
-def check_response_quality(question, response):
-    """Ask model if response actually answers the question"""
-    if len(response.strip()) < 5:
-        return False
-    try:
-        check = ollama.chat(
-            model=MODEL,
-            messages=[{"role": "user", "content": f'Does this answer "{question}"?\nResponse: "{response[:200]}"\nReply YES or NO only.'}],
-            options={'num_predict': 10, 'temperature': 0.1}
-        )
-        answer = check.get('message', {}).get('content', '').upper()
-        return 'YES' in answer
-    except:
-        return True
 
 # =============================================================================
 # ROUTE AND EXECUTE
@@ -219,46 +279,49 @@ def check_response_quality(question, response):
 def route_and_execute(user_input, intent):
     """Route to correct function based on intent"""
 
+    # Hardcoded responses - don't use model
+    if intent == 'identity':
+        print(f"Marcos: {IDENTITY_RESPONSE}")
+        return {'response': IDENTITY_RESPONSE}
+
+    if intent == 'capabilities':
+        print(f"Marcos: {CAPABILITIES_RESPONSE}")
+        return {'response': CAPABILITIES_RESPONSE}
+
     if intent == 'remember':
-        # Extract what to remember
         content = user_input.replace('remember', '').replace('note that', '').strip()
         return remember('key_fact', content)
 
-    elif intent == 'search_memory':
+    if intent == 'search_memory':
         query = user_input.replace('recall', '').replace('what do you remember about', '').strip()
         return search_memory(query)
 
-    elif intent == 'create_file':
-        # Try to extract filename and content
-        response = stream_response(f"Extract filename and content from: {user_input}\nReply as: FILENAME: ... CONTENT: ...")
+    if intent == 'create_file':
+        # Extract filename and content with model help
+        context = build_context()
+        response = stream_response(f"Extract filename and content from: {user_input}\nReply as: FILENAME: ... CONTENT: ...", context)
         if response and 'FILENAME:' in response:
             try:
                 parts = response.split('CONTENT:')
                 filename = parts[0].replace('FILENAME:', '').strip()
                 content = parts[1].strip() if len(parts) > 1 else ""
                 return create_file(filename, content)
-            except:
-                pass
+            except: pass
         return {'error': 'Could not parse file request'}
 
-    elif intent == 'search':
+    if intent == 'search':
         query = user_input.replace('search', '').replace('find', '').replace('look for', '').strip()
         return search_brain(query)
 
-    elif intent == 'deep_think':
+    if intent == 'deep_think':
         question = user_input.replace('think deep', '').replace('analyze', '').strip()
         return deep_think(question)
 
-    elif intent == 'execute':
+    if intent == 'execute':
         return execute_task(user_input)
 
-    elif intent == 'question':
-        stream_response(user_input, check_answer=True, original_question=user_input)
-        return None
-
-    else:  # conversation
-        stream_response(user_input)
-        return None
+    # Questions and conversation - use model
+    return None
 
 # =============================================================================
 # MAIN LOOP
@@ -272,16 +335,15 @@ def chat():
     # Check brain_server
     try:
         requests.get(f'{brain_url}/status', timeout=3)
-        print(f"Marcos online. Session #{convo_memory['sessions']}")
+        print(f"Marcos online. Session #{convo_memory['sessions']} | Model: {MODEL}")
     except:
-        print("Marcos online. (brain_server offline - some features limited)")
+        print(f"Marcos online. Session #{convo_memory['sessions']} (brain_server offline)")
 
     # Load memory stats
     try:
         mem_stats = opus_memory.get_full_stats()
         print(f"Memory: {mem_stats['total_facts']} facts | {mem_stats['total_conversations']} convos")
-    except:
-        pass
+    except: pass
 
     conversation = []
 
@@ -289,7 +351,6 @@ def chat():
         try:
             user_input = input("Hugo: ").strip()
         except (KeyboardInterrupt, EOFError):
-            # Archive conversation
             if conversation:
                 try:
                     opus_memory.archive_conversation(conversation, convo_memory["sessions"])
@@ -314,7 +375,7 @@ def chat():
         # Detect intent
         intent = detect_intent(user_input)
 
-        # Track conversation
+        # Track user message
         conversation.append({'role': 'user', 'content': user_input})
         if len(conversation) > 30:
             conversation = conversation[-30:]
@@ -322,13 +383,34 @@ def chat():
         # Route and execute
         result = route_and_execute(user_input, intent)
 
-        # Show result if any
-        if result and isinstance(result, dict):
+        # Build context for response
+        context = build_context()
+        result_context = format_result_context(intent, result) if result else None
+
+        # For hardcoded responses (identity/capabilities), track and continue
+        if result and result.get('response'):
+            conversation.append({'role': 'assistant', 'content': result['response']})
+            print()
+            continue
+
+        # For tool results, generate contextual response
+        if result_context:
             if result.get('error'):
-                print(f"   ✗ {result['error']}")
-            elif result.get('reasoning'):
-                print(f"Marcos: {result['reasoning'][:500]}")
-                conversation.append({'role': 'assistant', 'content': result['reasoning'][:500]})
+                print(f"Marcos: Failed - {result['error']}")
+                conversation.append({'role': 'assistant', 'content': f"Failed - {result['error']}"})
+            elif intent == 'deep_think':
+                # Already printed reasoning in deep_think
+                conversation.append({'role': 'assistant', 'content': result_context})
+            else:
+                # Acknowledge what happened
+                response = stream_response(f"I just did this: {result_context}. Confirm to Hugo what happened.", context)
+                if response:
+                    conversation.append({'role': 'assistant', 'content': response})
+        else:
+            # Questions and conversation - direct model response
+            response = stream_response(user_input, context)
+            if response:
+                conversation.append({'role': 'assistant', 'content': response})
 
         print()
 
