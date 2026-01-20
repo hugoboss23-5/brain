@@ -140,15 +140,18 @@ class RecursiveMemory:
         }
 
         combined = f"{user_message} {assistant_response}".lower()
+        user_lower = user_message.lower()
 
-        # Extract user preferences (things Hugo likes/wants)
+        # Extract user preferences (things Hugo likes/wants) - MORE PATTERNS
         pref_patterns = [
-            r"i (?:like|love|prefer|want|need) (.+?)(?:\.|,|$)",
-            r"(?:make it|i want it) (.+?)(?:\.|,|$)",
-            r"my (?:favorite|preferred) (.+?) is (.+?)(?:\.|,|$)"
+            r"i (?:like|love|prefer|want|need|hate|dont like) (.+?)(?:\.|,|!|$)",
+            r"(?:make it|i want it|lets|let's) (.+?)(?:\.|,|!|$)",
+            r"my (?:favorite|preferred) (.+?) is (.+?)(?:\.|,|$)",
+            r"can you (.+?)(?:\?|$)",  # Requests reveal preferences
+            r"i think (.+?)(?:\.|,|$)",
         ]
         for pattern in pref_patterns:
-            matches = re.findall(pattern, user_message.lower())
+            matches = re.findall(pattern, user_lower)
             for match in matches:
                 pref = match if isinstance(match, str) else ' '.join(match)
                 if len(pref) > 3 and len(pref) < 100:
@@ -166,24 +169,35 @@ class RecursiveMemory:
                 if match and len(match) > 2:
                     extracted["projects_mentioned"].append(match)
 
-        # Extract technical concepts
+        # Extract technical concepts - EXPANDED
         tech_patterns = [
             r'\b(api|server|database|model|neural|ai|ml|llm|token|embedding|vector|memory|cache)\b',
-            r'\b(python|javascript|html|css|json|react|flask|fastapi)\b',
-            r'\b(ollama|anthropic|openai|claude|gpt|llama|deepseek)\b'
+            r'\b(python|javascript|html|css|json|react|flask|fastapi|uvicorn)\b',
+            r'\b(ollama|anthropic|openai|claude|gpt|llama|deepseek|codellama)\b',
+            r'\b(file|folder|directory|path|create|edit|search|index|tool)\b',
+            r'\b(safety|security|internet|research|improvement|learning)\b',
         ]
         for pattern in tech_patterns:
             matches = re.findall(pattern, combined, re.IGNORECASE)
-            extracted["technical_concepts"].extend(matches)
+            extracted["technical_concepts"].extend([m.lower() for m in matches])
 
-        # Extract facts (statements about how things work)
-        if "is a" in combined or "is the" in combined or "means" in combined:
-            # Simple fact extraction - could be enhanced with NLP
-            sentences = combined.split('.')
-            for sentence in sentences:
-                if any(marker in sentence for marker in ["is a", "is the", "means", "works by"]):
-                    if len(sentence) > 10 and len(sentence) < 200:
-                        extracted["facts"].append(sentence.strip())
+        # Extract facts - MORE AGGRESSIVE
+        fact_markers = ["is a", "is the", "means", "works by", "can be", "should be",
+                       "allows", "enables", "helps", "created", "built", "designed"]
+        sentences = combined.replace('!', '.').replace('?', '.').split('.')
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if any(marker in sentence for marker in fact_markers):
+                if len(sentence) > 15 and len(sentence) < 250:
+                    extracted["facts"].append(sentence)
+
+        # Also extract any sentence that mentions Brain components as facts
+        brain_facts = []
+        for sentence in sentences:
+            if any(term in sentence.lower() for term in ['opus', 'eai', 'brain', 'thinker', 'swarm']):
+                if len(sentence) > 10 and len(sentence) < 250:
+                    brain_facts.append(sentence.strip())
+        extracted["facts"].extend(brain_facts[:3])  # Limit to avoid spam
 
         # Store extracted knowledge
         self._store_knowledge(extracted)

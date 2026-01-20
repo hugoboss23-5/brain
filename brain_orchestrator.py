@@ -186,6 +186,13 @@ tool_guard = ToolCallGuard()
 
 def view_brain(operation, path=None):
     """Read file or list directory"""
+    # Normalize path - replace spaces, handle None
+    if path:
+        path = path.replace(' ', '_')
+        # Add .txt if no extension and not a directory path
+        if operation == 'read_file' and '.' not in os.path.basename(path) and not path.endswith('/'):
+            path = path + '.txt'
+
     for attempt in range(3):
         try:
             r = requests.post(f'{brain_url}/view', json={'operation': operation, 'path': path}, timeout=30)
@@ -200,9 +207,13 @@ def view_brain(operation, path=None):
                         # Show first 100 chars as preview
                         preview = result.get('content', '')[:100].replace('\n', ' ')
                         console.print(f'[dim]     Preview: {preview}...[/dim]')
+                    elif content_len == 0:
+                        console.print(f'[yellow]   ⚠ File exists but empty or unreadable[/yellow]')
                 elif operation == 'list_directory':
                     items = result.get('items', result.get('files', []))
                     console.print(f'[cyan]   ✓ view_brain: Listed {path or "root"} ({len(items)} items)[/cyan]')
+                    if len(items) == 0:
+                        console.print(f'[yellow]   ⚠ Directory empty or cached stale - try reindex_brain[/yellow]')
             else:
                 console.print(f'[red]   ✗ view_brain error: {result.get("error")}[/red]')
 
@@ -331,6 +342,13 @@ def create_file(path, content):
     Use this for simple file creation when EAI is slow/busy.
     """
     try:
+        # Normalize path: replace spaces with underscores
+        path = path.replace(' ', '_')
+
+        # Add .txt extension if no extension provided
+        if '.' not in os.path.basename(path):
+            path = path + '.txt'
+
         # Get brain path from config
         full_path = os.path.join(config['brain_path'], path)
 
@@ -344,6 +362,14 @@ def create_file(path, content):
             f.write(content)
 
         console.print(f'[green]   ✓ Created: {path} ({len(content)} chars)[/green]')
+
+        # Trigger quick reindex so the file is searchable
+        try:
+            requests.post(f'{brain_url}/reindex', timeout=10)
+            console.print(f'[dim]   ↳ File indexed[/dim]')
+        except:
+            console.print(f'[dim]   ↳ Run reindex_brain to make searchable[/dim]')
+
         return {'status': 'created', 'path': path, 'size': len(content)}
 
     except PermissionError:
