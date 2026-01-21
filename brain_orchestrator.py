@@ -219,32 +219,39 @@ def node_call(node_name, prompt, temperature=0.5):
         return f"[Node {node_name} error: {e}]"
 
 def extract_fragment(node_output):
-    """Extract the sharpest DNA fragment from a node's output"""
-    fragment_prompt = f"""READ THIS OUTPUT:
+    """Extract the core insight from a node's output (displayed as DNA to user)"""
+    prompt = f"""Read this text:
+
 {node_output[:500]}
 
-NOW: Extract the single most important insight from the above.
+What is the single most important insight or idea in the above text?
 
-RULES:
-- One sentence only
-- No meta-commentary
-- No phrases like "the fragment is" or "the insight is"
-- Just state the insight directly
+RESPOND WITH ONLY ONE SENTENCE.
+NO preamble. NO explanation. NO meta-commentary.
+Just the insight itself.
 
-EXAMPLE OF GOOD OUTPUT: "Proof of work matters more than credentials"
-EXAMPLE OF BAD OUTPUT: "The DNA fragment that crosses is about proof of work"
+GOOD EXAMPLES:
+- "Age becomes irrelevant when proof of work exists"
+- "They need someone who sees what their PhDs cannot"
+- "Systems design is about architecture, not coding"
 
-YOUR OUTPUT (one sentence, no preamble):"""
+BAD EXAMPLES:
+- "The key insight is that..." (NO - don't start with "the key insight is")
+- "This shows that..." (NO - don't use meta phrases)
+- "The main point is..." (NO - just state the insight directly)
+
+YOUR ONE SENTENCE:"""
 
     try:
         response = ollama.chat(
             model=MODEL,
-            messages=[{"role": "user", "content": fragment_prompt}],
+            messages=[{"role": "user", "content": prompt}],
             options={'num_predict': 60, 'temperature': 0.2}
         )
         result = response.get('message', {}).get('content', '').strip()
         # Clean up any remaining meta-commentary
-        for prefix in ['The insight is:', 'The fragment is:', 'Fragment:', 'Insight:']:
+        for prefix in ['The insight is:', 'The key insight is:', 'The main point is:',
+                       'This shows that', 'The takeaway is:', 'In summary:']:
             if result.lower().startswith(prefix.lower()):
                 result = result[len(prefix):].strip()
         return result
@@ -260,11 +267,11 @@ def build_node_prompt(node_num, rotation_deg, task_prompt, input_data, helix_inj
     helix_section = ""
     if helix_injection:
         helix_section = f"""
-🧬 HELIX INJECTION (DNA from the other strand):
+═══ CROSS-POLLINATION (insight from the other thinking path):
 {helix_injection}
 
-The other strand has touched you. You carry its DNA now.
-Let it spiral INTO your processing. Do not ignore it.
+The other path discovered this. Let it influence your analysis.
+Integrate this perspective into your processing.
 ───────────────────────────"""
 
     return f"""═══ VORTEX NODE {node_num} ═══
@@ -428,18 +435,18 @@ Let the analytical DNA ground your intuition.""",
         rotation_deg=144,
         task_prompt=f"""HOLD BOTH paths. Do not resolve.
 
-STRAND A (Analytical, carrying B's DNA):
+PATH A (Analytical, influenced by intuition):
 {results['nodes']['n4']}
 
-STRAND B (Intuitive, carrying A's DNA):
+PATH B (Intuitive, grounded by logic):
 {results['nodes']['n5']}
 
 - Where do they AGREE?
 - Where do they CONFLICT?
 - What EMERGES from tension?
 You're seeing the back side. Hold the contradiction.
-The strands are already intertwined. See the double helix.""",
-        input_data="[DUAL HELIX INPUT - SEE TASK]"
+The paths have cross-pollinated. See what emerged.""",
+        input_data="[DUAL PATH INPUT - SEE TASK]"
     )
     results['nodes']['n6'] = node_call('6-CONVERGENCE', node6_prompt, 0.5)
 
@@ -459,23 +466,23 @@ The strands are already intertwined. See the double helix.""",
 
 Original question: {input_query}
 
-🧬 DNA SEQUENCE (the genetic code of this thought):
+KEY INSIGHTS EXCHANGED BETWEEN PATHS:
 {dna_display}
 
 CONVERGENCE:
 {results['nodes']['n6']}
 
-READ THE DNA. The pattern IS the answer.
-What is ENCODED in this helix?
+The pattern of insights IS the answer.
+What truth emerges from how these ideas cross-pollinated?
 
 FINAL CONTRACTION. Push out the essential truth.
-- What satisfies BOTH strands?
-- What does the DNA pattern reveal?
+- What satisfies BOTH paths?
+- What does the insight pattern reveal?
 - What NEW QUESTIONS emerged?
 - What remains UNRESOLVED?
 
 Format:
-FINAL ANSWER: [Essential truth encoded in the DNA]
+FINAL ANSWER: [The essential truth]
 NEW QUESTIONS: [What emerged]
 UNRESOLVED: [What couldn't resolve]
 CIRCULATION NEEDED: [yes/no]""",
