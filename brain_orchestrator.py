@@ -220,21 +220,34 @@ def node_call(node_name, prompt, temperature=0.5):
 
 def extract_fragment(node_output):
     """Extract the sharpest DNA fragment from a node's output"""
-    fragment_prompt = f"""From this output, extract the SINGLE sharpest insight.
-One sentence maximum. This is the DNA fragment that crosses to the other strand.
-
-OUTPUT:
+    fragment_prompt = f"""READ THIS OUTPUT:
 {node_output[:500]}
 
-FRAGMENT (one sentence only):"""
+NOW: Extract the single most important insight from the above.
+
+RULES:
+- One sentence only
+- No meta-commentary
+- No phrases like "the fragment is" or "the insight is"
+- Just state the insight directly
+
+EXAMPLE OF GOOD OUTPUT: "Proof of work matters more than credentials"
+EXAMPLE OF BAD OUTPUT: "The DNA fragment that crosses is about proof of work"
+
+YOUR OUTPUT (one sentence, no preamble):"""
 
     try:
         response = ollama.chat(
             model=MODEL,
             messages=[{"role": "user", "content": fragment_prompt}],
-            options={'num_predict': 50, 'temperature': 0.3}
+            options={'num_predict': 60, 'temperature': 0.2}
         )
-        return response.get('message', {}).get('content', '').strip()
+        result = response.get('message', {}).get('content', '').strip()
+        # Clean up any remaining meta-commentary
+        for prefix in ['The insight is:', 'The fragment is:', 'Fragment:', 'Insight:']:
+            if result.lower().startswith(prefix.lower()):
+                result = result[len(prefix):].strip()
+        return result
     except:
         return node_output[:100] if node_output else ""
 
