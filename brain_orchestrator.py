@@ -151,6 +151,223 @@ def deep_think(question):
         return {'error': str(e)}
 
 # =============================================================================
+# CHESTAHEDRON ARCHITECTURE - 7-Node Vortex Processing
+# =============================================================================
+# Inspired by the geometry of the human heart (36-degree tilt, vortex flow)
+# Information spirals through 7 nodes rather than linear processing
+# Node 7 feeds back to Node 1 for circulation
+
+def node_call(node_name, prompt, temperature=0.5):
+    """Call model for a specific node"""
+    try:
+        response = ollama.chat(
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            options={'num_predict': 500, 'temperature': temperature}
+        )
+        return response.get('message', {}).get('content', '')
+    except Exception as e:
+        return f"[Node {node_name} error: {e}]"
+
+def chestahedron_process(input_query, verbose=True):
+    """
+    Process input through 7 nodes in vortex pattern.
+    Returns dict with all node outputs and final answer.
+    """
+    results = {'input': input_query, 'nodes': {}}
+
+    # NODE 1: INTAKE (The Opening)
+    if verbose: print("   ◈ Node 1: INTAKE - Breaking down the question...")
+    node1_prompt = f"""You are NODE 1: INTAKE - The Opening.
+Your job is to receive this input and break it into components.
+Do NOT answer the question yet. Just decompose it.
+
+Ask yourself:
+- What is actually being asked here?
+- What are the separate pieces/aspects?
+- What assumptions are embedded?
+
+INPUT: {input_query}
+
+List the components clearly (numbered list)."""
+
+    results['nodes']['n1_intake'] = node_call('1-INTAKE', node1_prompt, 0.3)
+
+    # NODE 2: ANALYTICAL PATH (Left Ventricle)
+    if verbose: print("   ◈ Node 2: ANALYTICAL - Logic and structure...")
+    node2_prompt = f"""You are NODE 2: ANALYTICAL PATH - Left Ventricle.
+You received these components from Node 1:
+{results['nodes']['n1_intake']}
+
+Process with PURE LOGIC and STRUCTURE.
+- What are the facts?
+- What is the logical sequence?
+- What is provable or verifiable?
+- What are the dependencies?
+
+Be systematic. Be rigorous. No intuition here - only logic."""
+
+    results['nodes']['n2_analytical'] = node_call('2-ANALYTICAL', node2_prompt, 0.3)
+
+    # NODE 3: INTUITIVE PATH (Right Ventricle) - Parallel to Node 2
+    if verbose: print("   ◈ Node 3: INTUITIVE - Patterns and associations...")
+    node3_prompt = f"""You are NODE 3: INTUITIVE PATH - Right Ventricle.
+You received these components from Node 1:
+{results['nodes']['n1_intake']}
+
+Process with PATTERN RECOGNITION and ASSOCIATION.
+- What does this connect to in other domains?
+- What analogies or metaphors fit?
+- What does your gut say?
+- What would someone creative see here?
+
+Think laterally. Make unexpected connections. No logic constraints here."""
+
+    results['nodes']['n3_intuitive'] = node_call('3-INTUITIVE', node3_prompt, 0.7)
+
+    # NODE 4: ANALYTICAL DEEPENING
+    if verbose: print("   ◈ Node 4: ANALYTICAL DEEPENING - Stress testing...")
+    node4_prompt = f"""You are NODE 4: ANALYTICAL DEEPENING.
+You received this analytical breakdown from Node 2:
+{results['nodes']['n2_analytical']}
+
+Go DEEPER on the analytical path.
+- What are the implications of this logic?
+- What could break this reasoning?
+- What are the edge cases?
+- What happens if assumptions are wrong?
+
+Stress-test the logical conclusions ruthlessly."""
+
+    results['nodes']['n4_analytical_deep'] = node_call('4-ANALYTICAL-DEEP', node4_prompt, 0.3)
+
+    # NODE 5: INTUITIVE DEEPENING
+    if verbose: print("   ◈ Node 5: INTUITIVE DEEPENING - Finding universals...")
+    node5_prompt = f"""You are NODE 5: INTUITIVE DEEPENING.
+You received these intuitive associations from Node 3:
+{results['nodes']['n3_intuitive']}
+
+Go DEEPER on the intuitive path.
+- What patterns repeat across domains?
+- What universal principles are at play?
+- What would a master in this field see that a novice would miss?
+- What's the deeper truth beneath the surface?
+
+Expand the creative connections to their fullest."""
+
+    results['nodes']['n5_intuitive_deep'] = node_call('5-INTUITIVE-DEEP', node5_prompt, 0.7)
+
+    # NODE 6: CONVERGENCE (The Merger)
+    if verbose: print("   ◈ Node 6: CONVERGENCE - Merging paths...")
+    node6_prompt = f"""You are NODE 6: CONVERGENCE - The Merger.
+You received from the analytical path (Node 4):
+{results['nodes']['n4_analytical_deep']}
+
+You received from the intuitive path (Node 5):
+{results['nodes']['n5_intuitive_deep']}
+
+MERGE these two perspectives.
+- Where do logic and intuition AGREE?
+- Where do they CONFLICT?
+- What EMERGES from their combination that neither had alone?
+
+IMPORTANT: Do NOT resolve the conflicts yet. Hold the tension. Note where they disagree."""
+
+    results['nodes']['n6_convergence'] = node_call('6-CONVERGENCE', node6_prompt, 0.5)
+
+    # NODE 7: VORTEX CORE (The Heart Center)
+    if verbose: print("   ◈ Node 7: VORTEX CORE - Finding essential truth...")
+    node7_prompt = f"""You are NODE 7: VORTEX CORE - The Heart Center.
+You received this merged perspective with tensions from Node 6:
+{results['nodes']['n6_convergence']}
+
+Original question was: {input_query}
+
+Find the ESSENTIAL TRUTH.
+- What answer satisfies BOTH logic AND intuition?
+- How do you resolve the tensions?
+- What is the answer that feels both correct AND right?
+
+Also identify:
+- What NEW QUESTIONS emerged from this process?
+- What remains genuinely UNRESOLVED?
+
+Format your response as:
+FINAL ANSWER: [Your synthesized answer]
+NEW QUESTIONS: [Questions that emerged]
+UNRESOLVED: [What couldn't be resolved]
+CIRCULATION NEEDED: [yes/no - does this need another pass through the vortex?]"""
+
+    results['nodes']['n7_vortex_core'] = node_call('7-VORTEX-CORE', node7_prompt, 0.5)
+    results['final'] = results['nodes']['n7_vortex_core']
+
+    return results
+
+def chestahedron_full(input_query, max_circulations=2, verbose=True):
+    """
+    Full chestahedron processing with circulation.
+    Information can loop back through the vortex for deeper processing.
+    """
+    print(f"\n   🔷 CHESTAHEDRON VORTEX ACTIVATED")
+    print(f"   Processing: {input_query[:80]}...")
+    print()
+
+    current_input = input_query
+    all_results = []
+    circulation = 0
+
+    while circulation < max_circulations:
+        circulation += 1
+        if verbose: print(f"   ═══ Circulation {circulation}/{max_circulations} ═══")
+
+        result = chestahedron_process(current_input, verbose)
+        all_results.append(result)
+
+        final_output = result['final'].lower()
+
+        # Check if circulation is needed
+        if 'circulation needed: no' in final_output or 'circulation needed: false' in final_output:
+            if verbose: print(f"   ✓ Vortex complete after {circulation} circulation(s)")
+            break
+
+        # Extract unresolved for next circulation
+        if circulation < max_circulations:
+            # Find NEW QUESTIONS or UNRESOLVED sections
+            unresolved = ""
+            if 'new questions:' in final_output:
+                idx = final_output.find('new questions:')
+                unresolved = result['final'][idx:]
+            elif 'unresolved:' in final_output:
+                idx = final_output.find('unresolved:')
+                unresolved = result['final'][idx:]
+
+            if unresolved and len(unresolved) > 20:
+                current_input = f"Previous analysis raised these questions: {unresolved}\n\nOriginal query: {input_query}"
+                if verbose: print(f"   ↻ Circulating with new questions...")
+            else:
+                if verbose: print(f"   ✓ No significant unresolved items, ending circulation")
+                break
+
+    # Compile final result
+    final_result = {
+        'circulations': circulation,
+        'final_answer': all_results[-1]['final'],
+        'all_nodes': all_results[-1]['nodes'],
+        'history': all_results if len(all_results) > 1 else None
+    }
+
+    return final_result
+
+def extract_final_answer(result):
+    """Extract just the FINAL ANSWER portion from vortex output"""
+    text = result.get('final_answer', '')
+    if 'FINAL ANSWER:' in text:
+        start = text.find('FINAL ANSWER:') + len('FINAL ANSWER:')
+        end = text.find('NEW QUESTIONS:') if 'NEW QUESTIONS:' in text else len(text)
+        return text[start:end].strip()
+    return text
+
+# =============================================================================
 # MEMORY CONTEXT
 # =============================================================================
 def get_memory_context():
@@ -191,6 +408,10 @@ def detect_intent(text):
     # List files
     if any(w in t for w in ['list files', 'show files', 'what files', 'ls', 'dir']):
         return 'list_files'
+
+    # CHESTAHEDRON / VORTEX - 7-node deep processing
+    if any(w in t for w in ['vortex', 'chestahedron', 'heart think', '7 node', 'spiral think', 'deep vortex']):
+        return 'chestahedron'
 
     if any(w in t for w in ['remember', 'store', 'save fact', 'note that']):
         return 'remember'
@@ -252,7 +473,7 @@ def route_and_execute(user_input, intent, conversation):
 
     # Capabilities - hardcoded
     if intent == 'capabilities':
-        response = "search_brain, create_file, remember, search_memory, execute_task, deep_think. Just tell me what you need."
+        response = "search_brain, create_file, remember, search_memory, execute_task, deep_think, vortex (7-node chestahedron processing). Say 'vortex: [question]' for deep spiral thinking."
         print(f"Marcos: {response}")
         conversation.append({'role': 'assistant', 'content': response})
         return None
@@ -339,6 +560,38 @@ def route_and_execute(user_input, intent, conversation):
             resp = stream_response(f"Thinking failed: {result.get('error')}")
             if resp:
                 conversation.append({'role': 'assistant', 'content': resp})
+        return result
+
+    # CHESTAHEDRON - 7-node vortex processing
+    if intent == 'chestahedron':
+        # Extract the actual question (remove trigger words)
+        question = user_input
+        for trigger in ['vortex', 'chestahedron', 'heart think', '7 node', 'spiral think', 'deep vortex']:
+            question = question.lower().replace(trigger, '').strip()
+        question = question.strip(':').strip()
+
+        if not question or len(question) < 5:
+            print("Marcos: Give me a question to process through the vortex. Example: 'vortex: how should I approach learning AI?'")
+            return None
+
+        result = chestahedron_full(question, max_circulations=2, verbose=True)
+
+        # Display the final answer
+        final = extract_final_answer(result)
+        print(f"\n   🔷 VORTEX OUTPUT ({result['circulations']} circulation(s)):\n")
+        print(f"Marcos: {final[:1500]}")
+        conversation.append({'role': 'assistant', 'content': final[:1500]})
+
+        # Also show new questions if any
+        full_output = result.get('final_answer', '')
+        if 'NEW QUESTIONS:' in full_output:
+            idx = full_output.find('NEW QUESTIONS:')
+            end_idx = full_output.find('UNRESOLVED:') if 'UNRESOLVED:' in full_output else full_output.find('CIRCULATION')
+            if end_idx == -1: end_idx = len(full_output)
+            new_q = full_output[idx:end_idx].strip()
+            if new_q:
+                print(f"\n   {new_q}")
+
         return result
 
     # Execute task
