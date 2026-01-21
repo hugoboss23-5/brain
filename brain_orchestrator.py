@@ -162,6 +162,12 @@ def deep_think(question):
 # - Asymmetry: 4 triangles (sharp), 3 quadrilaterals (broad)
 # - Pulse: Systole (contraction) and Diastole (expansion)
 # - Vortex: All nodes feel pull toward Node 7 (center)
+#
+# DOUBLE HELIX (DNA of Thought):
+# - Strand A (Analytical): N1 → N2 → N4 → N6 → N7
+# - Strand B (Intuitive):  N1 → N3 → N5 → N6 → N7
+# - Strands exchange FRAGMENTS at connection points
+# - Each answer has unique genetic code
 
 # Rotation angles - the 36-degree offset principle
 ROTATIONS = {
@@ -212,11 +218,41 @@ def node_call(node_name, prompt, temperature=0.5):
     except Exception as e:
         return f"[Node {node_name} error: {e}]"
 
-def build_node_prompt(node_num, rotation_deg, task_prompt, input_data):
-    """Build a geometrically-aware node prompt"""
+def extract_fragment(node_output):
+    """Extract the sharpest DNA fragment from a node's output"""
+    fragment_prompt = f"""From this output, extract the SINGLE sharpest insight.
+One sentence maximum. This is the DNA fragment that crosses to the other strand.
+
+OUTPUT:
+{node_output[:500]}
+
+FRAGMENT (one sentence only):"""
+
+    try:
+        response = ollama.chat(
+            model=MODEL,
+            messages=[{"role": "user", "content": fragment_prompt}],
+            options={'num_predict': 50, 'temperature': 0.3}
+        )
+        return response.get('message', {}).get('content', '').strip()
+    except:
+        return node_output[:100] if node_output else ""
+
+def build_node_prompt(node_num, rotation_deg, task_prompt, input_data, helix_injection=None):
+    """Build a geometrically-aware node prompt with optional helix injection"""
     geo = NODE_GEOMETRY[node_num]
     pulse = PULSE_PHASE[node_num]
     rotation = ROTATIONS.get(rotation_deg, "")
+
+    helix_section = ""
+    if helix_injection:
+        helix_section = f"""
+🧬 HELIX INJECTION (DNA from the other strand):
+{helix_injection}
+
+The other strand has touched you. You carry its DNA now.
+Let it spiral INTO your processing. Do not ignore it.
+───────────────────────────"""
 
     return f"""═══ VORTEX NODE {node_num} ═══
 
@@ -234,6 +270,7 @@ VORTEX: {VORTEX_PULL}
 INPUT:
 {input_data}
 ───────────────────────────
+{helix_section}
 
 YOUR TASK:
 {task_prompt}
@@ -260,8 +297,10 @@ The vortex spirals tighter with each pass."""
 def chestahedron_process(input_query, circulation_num=1, verbose=True):
     """
     Process input through 7 nodes in vortex pattern with full geometry.
+    Implements DOUBLE HELIX - strands exchange DNA fragments.
     """
     results = {'input': input_query, 'nodes': {}, 'circulation': circulation_num}
+    dna_sequence = []  # Track helix exchanges
 
     # NODE 1: INTAKE (Quadrilateral, 0°, Diastole)
     if verbose: print("   ◈ Node 1: INTAKE [QUAD|0°|DIASTOLE]")
@@ -277,8 +316,9 @@ List components clearly.""",
     )
     results['nodes']['n1'] = node_call('1-INTAKE', node1_prompt, 0.3)
 
+    # ═══ STRAND A: ANALYTICAL PATH ═══
     # NODE 2: ANALYTICAL (Triangle, 0°, Diastole)
-    if verbose: print("   ◈ Node 2: ANALYTICAL [TRI|0°|DIASTOLE]")
+    if verbose: print("   ◈ Node 2: ANALYTICAL [TRI|0°|DIASTOLE] ─── Strand A")
     node2_prompt = build_node_prompt(
         node_num=2,
         rotation_deg=0,
@@ -291,8 +331,9 @@ No intuition. Only logic. Be surgical.""",
     )
     results['nodes']['n2'] = node_call('2-ANALYTICAL', node2_prompt, 0.3)
 
+    # ═══ STRAND B: INTUITIVE PATH ═══
     # NODE 3: INTUITIVE (Triangle, 36°, Diastole) - THE KEY ANGLE
-    if verbose: print("   ◈ Node 3: INTUITIVE [TRI|36°|DIASTOLE]")
+    if verbose: print("   ◈ Node 3: INTUITIVE [TRI|36°|DIASTOLE] ─── Strand B")
     node3_prompt = build_node_prompt(
         node_num=3,
         rotation_deg=36,
@@ -305,8 +346,23 @@ No logic constraints. Lateral thinking only.""",
     )
     results['nodes']['n3'] = node_call('3-INTUITIVE', node3_prompt, 0.7)
 
+    # ═══ HELIX CONNECTION POINT 1 ═══
+    # Extract fragments and cross them
+    if verbose: print("   🧬 Helix Connection 1: Extracting DNA fragments...")
+    n2_fragment = extract_fragment(results['nodes']['n2'])
+    n3_fragment = extract_fragment(results['nodes']['n3'])
+    dna_sequence.append({
+        "position": 1,
+        "A_to_B": n2_fragment,  # Analytical → Intuitive
+        "B_to_A": n3_fragment   # Intuitive → Analytical
+    })
+    if verbose:
+        print(f"      A→B: {n2_fragment[:60]}...")
+        print(f"      B→A: {n3_fragment[:60]}...")
+
     # NODE 4: ANALYTICAL DEEPENING (Triangle, 72°, Systole)
-    if verbose: print("   ◈ Node 4: DEEP ANALYTICAL [TRI|72°|SYSTOLE]")
+    # Receives Node 3's fragment (helix injection)
+    if verbose: print("   ◈ Node 4: DEEP ANALYTICAL [TRI|72°|SYSTOLE] + B DNA")
     node4_prompt = build_node_prompt(
         node_num=4,
         rotation_deg=72,
@@ -314,13 +370,16 @@ No logic constraints. Lateral thinking only.""",
 - What breaks this reasoning?
 - What's the ONE critical edge case?
 - Apply maximum pressure. What survives?
-Contract. Focus. One deep cut.""",
-        input_data=results['nodes']['n2']
+Contract. Focus. One deep cut.
+Let the intuitive DNA influence your analysis.""",
+        input_data=results['nodes']['n2'],
+        helix_injection=n3_fragment
     )
     results['nodes']['n4'] = node_call('4-DEEP-ANALYTICAL', node4_prompt, 0.3)
 
     # NODE 5: INTUITIVE DEEPENING (Triangle, 108°, Systole)
-    if verbose: print("   ◈ Node 5: DEEP INTUITIVE [TRI|108°|SYSTOLE]")
+    # Receives Node 2's fragment (helix injection)
+    if verbose: print("   ◈ Node 5: DEEP INTUITIVE [TRI|108°|SYSTOLE] + A DNA")
     node5_prompt = build_node_prompt(
         node_num=5,
         rotation_deg=108,
@@ -328,56 +387,90 @@ Contract. Focus. One deep cut.""",
 - What universal principle is at play?
 - What would a master see that a novice misses?
 - Almost perpendicular view - what's obvious from here?
-Contract. One universal truth.""",
-        input_data=results['nodes']['n3']
+Contract. One universal truth.
+Let the analytical DNA ground your intuition.""",
+        input_data=results['nodes']['n3'],
+        helix_injection=n2_fragment
     )
     results['nodes']['n5'] = node_call('5-DEEP-INTUITIVE', node5_prompt, 0.7)
 
+    # ═══ HELIX CONNECTION POINT 2 ═══
+    if verbose: print("   🧬 Helix Connection 2: Extracting DNA fragments...")
+    n4_fragment = extract_fragment(results['nodes']['n4'])
+    n5_fragment = extract_fragment(results['nodes']['n5'])
+    dna_sequence.append({
+        "position": 2,
+        "A_to_B": n4_fragment,  # Analytical → Intuitive
+        "B_to_A": n5_fragment   # Intuitive → Analytical
+    })
+    if verbose:
+        print(f"      A→B: {n4_fragment[:60]}...")
+        print(f"      B→A: {n5_fragment[:60]}...")
+
     # NODE 6: CONVERGENCE (Quadrilateral, 144°, Diastole)
-    if verbose: print("   ◈ Node 6: CONVERGENCE [QUAD|144°|DIASTOLE]")
+    # Receives BOTH strands already intertwined
+    if verbose: print("   ◈ Node 6: CONVERGENCE [QUAD|144°|DIASTOLE] ─── Helix Merge")
     node6_prompt = build_node_prompt(
         node_num=6,
         rotation_deg=144,
-        task_prompt="""HOLD BOTH paths. Do not resolve.
-Analytical input: {n4}
-Intuitive input: {n5}
+        task_prompt=f"""HOLD BOTH paths. Do not resolve.
+
+STRAND A (Analytical, carrying B's DNA):
+{results['nodes']['n4']}
+
+STRAND B (Intuitive, carrying A's DNA):
+{results['nodes']['n5']}
 
 - Where do they AGREE?
 - Where do they CONFLICT?
 - What EMERGES from tension?
-You're seeing the back side. Hold the contradiction.""".format(
-            n4=results['nodes']['n4'],
-            n5=results['nodes']['n5']
-        ),
-        input_data="[DUAL INPUT - SEE TASK]"
+You're seeing the back side. Hold the contradiction.
+The strands are already intertwined. See the double helix.""",
+        input_data="[DUAL HELIX INPUT - SEE TASK]"
     )
     results['nodes']['n6'] = node_call('6-CONVERGENCE', node6_prompt, 0.5)
 
     # NODE 7: VORTEX CORE (Quadrilateral, 216°, Systole)
-    if verbose: print("   ◈ Node 7: VORTEX CORE [QUAD|216°|SYSTOLE]")
+    # Receives full DNA sequence
+    if verbose: print("   ◈ Node 7: VORTEX CORE [QUAD|216°|SYSTOLE] ─── Reading DNA")
+
+    dna_display = "\n".join([
+        f"Position {d['position']}: A→B: {d['A_to_B'][:80]}... | B→A: {d['B_to_A'][:80]}..."
+        for d in dna_sequence
+    ])
+
     node7_prompt = build_node_prompt(
         node_num=7,
         rotation_deg=216,
         task_prompt=f"""YOU ARE THE CENTER. Everything spirals to you.
 
 Original question: {input_query}
-Merged perspective: {{convergence}}
+
+🧬 DNA SEQUENCE (the genetic code of this thought):
+{dna_display}
+
+CONVERGENCE:
+{results['nodes']['n6']}
+
+READ THE DNA. The pattern IS the answer.
+What is ENCODED in this helix?
 
 FINAL CONTRACTION. Push out the essential truth.
-- What satisfies BOTH logic AND intuition?
-- Resolve the tensions into coherent answer.
+- What satisfies BOTH strands?
+- What does the DNA pattern reveal?
 - What NEW QUESTIONS emerged?
 - What remains UNRESOLVED?
 
 Format:
-FINAL ANSWER: [Essential truth]
+FINAL ANSWER: [Essential truth encoded in the DNA]
 NEW QUESTIONS: [What emerged]
 UNRESOLVED: [What couldn't resolve]
-CIRCULATION NEEDED: [yes/no]""".format(convergence=results['nodes']['n6']),
+CIRCULATION NEEDED: [yes/no]""",
         input_data=results['nodes']['n6']
     )
     results['nodes']['n7'] = node_call('7-VORTEX-CORE', node7_prompt, 0.5)
     results['final'] = results['nodes']['n7']
+    results['dna_sequence'] = dna_sequence
 
     return results
 
@@ -388,7 +481,8 @@ def chestahedron_full(input_query, max_circulations=2, verbose=True):
     """
     print(f"\n   🔷 CHESTAHEDRON VORTEX ACTIVATED")
     print(f"   Geometry: 4 triangles, 3 quadrilaterals, 36° base angle")
-    print(f"   Processing: {input_query[:60]}...")
+    print(f"   Double Helix: Strand A (analytical) ⟷ Strand B (intuitive)")
+    print(f"   Processing: {input_query[:50]}...")
     print()
 
     current_input = input_query
@@ -425,12 +519,16 @@ def chestahedron_full(input_query, max_circulations=2, verbose=True):
                 if verbose: print(f"   ✓ No significant unresolved, ending")
                 break
 
-    return {
+    # Build final result with DNA
+    final_result = {
         'circulations': circulation,
         'final_answer': all_results[-1]['final'],
         'all_nodes': all_results[-1]['nodes'],
+        'dna_sequence': all_results[-1].get('dna_sequence', []),
         'history': all_results if len(all_results) > 1 else None
     }
+
+    return final_result
 
 def extract_final_answer(result):
     """Extract just the FINAL ANSWER portion from vortex output"""
@@ -440,6 +538,17 @@ def extract_final_answer(result):
         end = text.find('NEW QUESTIONS:') if 'NEW QUESTIONS:' in text else len(text)
         return text[start:end].strip()
     return text
+
+def format_dna_sequence(dna_sequence):
+    """Format DNA sequence for display"""
+    if not dna_sequence:
+        return ""
+    lines = ["🧬 DNA SEQUENCE:"]
+    for d in dna_sequence:
+        lines.append(f"   Position {d['position']}:")
+        lines.append(f"   A→B: {d['A_to_B'][:100]}")
+        lines.append(f"   B→A: {d['B_to_A'][:100]}")
+    return "\n".join(lines)
 
 # =============================================================================
 # MEMORY CONTEXT
@@ -649,6 +758,15 @@ def route_and_execute(user_input, intent, conversation):
             return None
 
         result = chestahedron_full(question, max_circulations=2, verbose=True)
+
+        # Display DNA sequence - the genetic code of this thought
+        dna_seq = result.get('dna_sequence', [])
+        if dna_seq:
+            print(f"\n   🧬 DNA SEQUENCE (genetic code of this thought):")
+            for d in dna_seq:
+                print(f"   Position {d['position']}:")
+                print(f"      A→B: {d['A_to_B'][:100]}")
+                print(f"      B→A: {d['B_to_A'][:100]}")
 
         # Display the final answer
         final = extract_final_answer(result)
