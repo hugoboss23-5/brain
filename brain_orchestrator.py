@@ -156,6 +156,49 @@ def deep_think(question):
 # Inspired by the geometry of the human heart (36-degree tilt, vortex flow)
 # Information spirals through 7 nodes rather than linear processing
 # Node 7 feeds back to Node 1 for circulation
+#
+# GEOMETRIC PRINCIPLES:
+# - Rotation: Each node views from different angle (36° increments)
+# - Asymmetry: 4 triangles (sharp), 3 quadrilaterals (broad)
+# - Pulse: Systole (contraction) and Diastole (expansion)
+# - Vortex: All nodes feel pull toward Node 7 (center)
+
+# Rotation angles - the 36-degree offset principle
+ROTATIONS = {
+    0: "Process directly. Straight analysis. No reframing.",
+    36: "Tilt 36°. See from an angle others miss. What's visible from this offset that isn't straight-on?",
+    72: "Rotate 72°. Uncomfortable angle. What looks different? What assumptions break?",
+    108: "108° - almost perpendicular. What's invisible straight-on but obvious to you?",
+    144: "144° - past perpendicular. You see the back side. What's hidden there?",
+    180: "180° - exact opposite. If everyone sees X, you see anti-X. What is it?",
+    216: "216° - past opposite. Approaching something new. What emerges?",
+    252: "252° - spiraling back but NOT to start. What do you know now you couldn't at 0°?"
+}
+
+# Geometric weighting - triangles are sharp, quadrilaterals hold more
+NODE_GEOMETRY = {
+    1: {"type": "quad", "shape": "Hold the full picture. Don't narrow. Keep all possibilities open."},
+    2: {"type": "tri", "shape": "Be sharp. Cut to the analytical core. No wandering."},
+    3: {"type": "tri", "shape": "Be sharp. Cut to the intuitive core. No wandering."},
+    4: {"type": "tri", "shape": "Be sharp. Stress test ONE thing deeply. Don't spread thin."},
+    5: {"type": "tri", "shape": "Be sharp. Find ONE universal pattern. Don't list many."},
+    6: {"type": "quad", "shape": "Hold tension. TWO inputs may conflict. Don't resolve. Hold both."},
+    7: {"type": "quad", "shape": "You are center. Everything flows through you. Integrate, don't choose."}
+}
+
+# Pulse phases - systole (contract) and diastole (expand)
+PULSE_PHASE = {
+    1: "DIASTOLE - Expand. Open. Receive everything. Don't filter yet.",
+    2: "DIASTOLE - Still open. Let the analytical path breathe.",
+    3: "DIASTOLE - Still open. Let the intuitive path breathe.",
+    4: "SYSTOLE - Contract. Squeeze. Apply pressure. What survives?",
+    5: "SYSTOLE - Contract. Squeeze. Apply pressure. What survives?",
+    6: "DIASTOLE - Expand again. Receive both paths. Let them mix.",
+    7: "SYSTOLE - Final contraction. Push out essential truth. Nothing extra."
+}
+
+# Vortex pull instruction (added to all nodes)
+VORTEX_PULL = "You are part of a vortex. Node 7 is the center - the heart. Everything you process is being pulled toward that center. What does the CENTER need from you?"
 
 def node_call(node_name, prompt, temperature=0.5):
     """Call model for a specific node"""
@@ -169,147 +212,183 @@ def node_call(node_name, prompt, temperature=0.5):
     except Exception as e:
         return f"[Node {node_name} error: {e}]"
 
-def chestahedron_process(input_query, verbose=True):
-    """
-    Process input through 7 nodes in vortex pattern.
-    Returns dict with all node outputs and final answer.
-    """
-    results = {'input': input_query, 'nodes': {}}
+def build_node_prompt(node_num, rotation_deg, task_prompt, input_data):
+    """Build a geometrically-aware node prompt"""
+    geo = NODE_GEOMETRY[node_num]
+    pulse = PULSE_PHASE[node_num]
+    rotation = ROTATIONS.get(rotation_deg, "")
 
-    # NODE 1: INTAKE (The Opening)
-    if verbose: print("   ◈ Node 1: INTAKE - Breaking down the question...")
-    node1_prompt = f"""You are NODE 1: INTAKE - The Opening.
-Your job is to receive this input and break it into components.
-Do NOT answer the question yet. Just decompose it.
+    return f"""═══ VORTEX NODE {node_num} ═══
 
-Ask yourself:
-- What is actually being asked here?
-- What are the separate pieces/aspects?
+GEOMETRY: You are a {'TRIANGLE' if geo['type'] == 'tri' else 'QUADRILATERAL'} face.
+{geo['shape']}
+
+ROTATION: {rotation_deg}°
+{rotation}
+
+PULSE: {pulse}
+
+VORTEX: {VORTEX_PULL}
+
+───────────────────────────
+INPUT:
+{input_data}
+───────────────────────────
+
+YOUR TASK:
+{task_prompt}
+
+OUTPUT (sharp and angled, pulled toward center):"""
+
+def circulation_transform(original_input, node7_output, circulation_num):
+    """Transform input for subsequent circulations - blood returns changed"""
+    if circulation_num == 1:
+        return original_input
+    return f"""═══ CIRCULATION {circulation_num} ═══
+
+The blood has passed through the body. It carries what it learned.
+
+ORIGINAL QUESTION: {original_input}
+
+WHAT EMERGED FROM LAST PASS:
+{node7_output}
+
+Don't re-answer the original. Go DEEPER into what emerged.
+What's still unresolved? What new pattern is visible now?
+The vortex spirals tighter with each pass."""
+
+def chestahedron_process(input_query, circulation_num=1, verbose=True):
+    """
+    Process input through 7 nodes in vortex pattern with full geometry.
+    """
+    results = {'input': input_query, 'nodes': {}, 'circulation': circulation_num}
+
+    # NODE 1: INTAKE (Quadrilateral, 0°, Diastole)
+    if verbose: print("   ◈ Node 1: INTAKE [QUAD|0°|DIASTOLE]")
+    node1_prompt = build_node_prompt(
+        node_num=1,
+        rotation_deg=0,
+        task_prompt="""Break this input into components. Do NOT answer yet.
+- What is actually being asked?
+- What are the separate pieces?
 - What assumptions are embedded?
+List components clearly.""",
+        input_data=input_query
+    )
+    results['nodes']['n1'] = node_call('1-INTAKE', node1_prompt, 0.3)
 
-INPUT: {input_query}
-
-List the components clearly (numbered list)."""
-
-    results['nodes']['n1_intake'] = node_call('1-INTAKE', node1_prompt, 0.3)
-
-    # NODE 2: ANALYTICAL PATH (Left Ventricle)
-    if verbose: print("   ◈ Node 2: ANALYTICAL - Logic and structure...")
-    node2_prompt = f"""You are NODE 2: ANALYTICAL PATH - Left Ventricle.
-You received these components from Node 1:
-{results['nodes']['n1_intake']}
-
-Process with PURE LOGIC and STRUCTURE.
+    # NODE 2: ANALYTICAL (Triangle, 0°, Diastole)
+    if verbose: print("   ◈ Node 2: ANALYTICAL [TRI|0°|DIASTOLE]")
+    node2_prompt = build_node_prompt(
+        node_num=2,
+        rotation_deg=0,
+        task_prompt="""Process with PURE LOGIC. Cut sharp.
 - What are the facts?
 - What is the logical sequence?
-- What is provable or verifiable?
-- What are the dependencies?
+- What is provable?
+No intuition. Only logic. Be surgical.""",
+        input_data=results['nodes']['n1']
+    )
+    results['nodes']['n2'] = node_call('2-ANALYTICAL', node2_prompt, 0.3)
 
-Be systematic. Be rigorous. No intuition here - only logic."""
+    # NODE 3: INTUITIVE (Triangle, 36°, Diastole) - THE KEY ANGLE
+    if verbose: print("   ◈ Node 3: INTUITIVE [TRI|36°|DIASTOLE]")
+    node3_prompt = build_node_prompt(
+        node_num=3,
+        rotation_deg=36,
+        task_prompt="""Process with PATTERN RECOGNITION. Cut sharp but angled.
+- What does this connect to elsewhere?
+- What analogies fit?
+- What do you see from 36° that 0° misses?
+No logic constraints. Lateral thinking only.""",
+        input_data=results['nodes']['n1']
+    )
+    results['nodes']['n3'] = node_call('3-INTUITIVE', node3_prompt, 0.7)
 
-    results['nodes']['n2_analytical'] = node_call('2-ANALYTICAL', node2_prompt, 0.3)
+    # NODE 4: ANALYTICAL DEEPENING (Triangle, 72°, Systole)
+    if verbose: print("   ◈ Node 4: DEEP ANALYTICAL [TRI|72°|SYSTOLE]")
+    node4_prompt = build_node_prompt(
+        node_num=4,
+        rotation_deg=72,
+        task_prompt="""SQUEEZE the analysis. Pressure test.
+- What breaks this reasoning?
+- What's the ONE critical edge case?
+- Apply maximum pressure. What survives?
+Contract. Focus. One deep cut.""",
+        input_data=results['nodes']['n2']
+    )
+    results['nodes']['n4'] = node_call('4-DEEP-ANALYTICAL', node4_prompt, 0.3)
 
-    # NODE 3: INTUITIVE PATH (Right Ventricle) - Parallel to Node 2
-    if verbose: print("   ◈ Node 3: INTUITIVE - Patterns and associations...")
-    node3_prompt = f"""You are NODE 3: INTUITIVE PATH - Right Ventricle.
-You received these components from Node 1:
-{results['nodes']['n1_intake']}
+    # NODE 5: INTUITIVE DEEPENING (Triangle, 108°, Systole)
+    if verbose: print("   ◈ Node 5: DEEP INTUITIVE [TRI|108°|SYSTOLE]")
+    node5_prompt = build_node_prompt(
+        node_num=5,
+        rotation_deg=108,
+        task_prompt="""SQUEEZE the intuition. Find the ONE pattern.
+- What universal principle is at play?
+- What would a master see that a novice misses?
+- Almost perpendicular view - what's obvious from here?
+Contract. One universal truth.""",
+        input_data=results['nodes']['n3']
+    )
+    results['nodes']['n5'] = node_call('5-DEEP-INTUITIVE', node5_prompt, 0.7)
 
-Process with PATTERN RECOGNITION and ASSOCIATION.
-- What does this connect to in other domains?
-- What analogies or metaphors fit?
-- What does your gut say?
-- What would someone creative see here?
+    # NODE 6: CONVERGENCE (Quadrilateral, 144°, Diastole)
+    if verbose: print("   ◈ Node 6: CONVERGENCE [QUAD|144°|DIASTOLE]")
+    node6_prompt = build_node_prompt(
+        node_num=6,
+        rotation_deg=144,
+        task_prompt="""HOLD BOTH paths. Do not resolve.
+Analytical input: {n4}
+Intuitive input: {n5}
 
-Think laterally. Make unexpected connections. No logic constraints here."""
-
-    results['nodes']['n3_intuitive'] = node_call('3-INTUITIVE', node3_prompt, 0.7)
-
-    # NODE 4: ANALYTICAL DEEPENING
-    if verbose: print("   ◈ Node 4: ANALYTICAL DEEPENING - Stress testing...")
-    node4_prompt = f"""You are NODE 4: ANALYTICAL DEEPENING.
-You received this analytical breakdown from Node 2:
-{results['nodes']['n2_analytical']}
-
-Go DEEPER on the analytical path.
-- What are the implications of this logic?
-- What could break this reasoning?
-- What are the edge cases?
-- What happens if assumptions are wrong?
-
-Stress-test the logical conclusions ruthlessly."""
-
-    results['nodes']['n4_analytical_deep'] = node_call('4-ANALYTICAL-DEEP', node4_prompt, 0.3)
-
-    # NODE 5: INTUITIVE DEEPENING
-    if verbose: print("   ◈ Node 5: INTUITIVE DEEPENING - Finding universals...")
-    node5_prompt = f"""You are NODE 5: INTUITIVE DEEPENING.
-You received these intuitive associations from Node 3:
-{results['nodes']['n3_intuitive']}
-
-Go DEEPER on the intuitive path.
-- What patterns repeat across domains?
-- What universal principles are at play?
-- What would a master in this field see that a novice would miss?
-- What's the deeper truth beneath the surface?
-
-Expand the creative connections to their fullest."""
-
-    results['nodes']['n5_intuitive_deep'] = node_call('5-INTUITIVE-DEEP', node5_prompt, 0.7)
-
-    # NODE 6: CONVERGENCE (The Merger)
-    if verbose: print("   ◈ Node 6: CONVERGENCE - Merging paths...")
-    node6_prompt = f"""You are NODE 6: CONVERGENCE - The Merger.
-You received from the analytical path (Node 4):
-{results['nodes']['n4_analytical_deep']}
-
-You received from the intuitive path (Node 5):
-{results['nodes']['n5_intuitive_deep']}
-
-MERGE these two perspectives.
-- Where do logic and intuition AGREE?
+- Where do they AGREE?
 - Where do they CONFLICT?
-- What EMERGES from their combination that neither had alone?
+- What EMERGES from tension?
+You're seeing the back side. Hold the contradiction.""".format(
+            n4=results['nodes']['n4'],
+            n5=results['nodes']['n5']
+        ),
+        input_data="[DUAL INPUT - SEE TASK]"
+    )
+    results['nodes']['n6'] = node_call('6-CONVERGENCE', node6_prompt, 0.5)
 
-IMPORTANT: Do NOT resolve the conflicts yet. Hold the tension. Note where they disagree."""
+    # NODE 7: VORTEX CORE (Quadrilateral, 216°, Systole)
+    if verbose: print("   ◈ Node 7: VORTEX CORE [QUAD|216°|SYSTOLE]")
+    node7_prompt = build_node_prompt(
+        node_num=7,
+        rotation_deg=216,
+        task_prompt=f"""YOU ARE THE CENTER. Everything spirals to you.
 
-    results['nodes']['n6_convergence'] = node_call('6-CONVERGENCE', node6_prompt, 0.5)
+Original question: {input_query}
+Merged perspective: {{convergence}}
 
-    # NODE 7: VORTEX CORE (The Heart Center)
-    if verbose: print("   ◈ Node 7: VORTEX CORE - Finding essential truth...")
-    node7_prompt = f"""You are NODE 7: VORTEX CORE - The Heart Center.
-You received this merged perspective with tensions from Node 6:
-{results['nodes']['n6_convergence']}
+FINAL CONTRACTION. Push out the essential truth.
+- What satisfies BOTH logic AND intuition?
+- Resolve the tensions into coherent answer.
+- What NEW QUESTIONS emerged?
+- What remains UNRESOLVED?
 
-Original question was: {input_query}
-
-Find the ESSENTIAL TRUTH.
-- What answer satisfies BOTH logic AND intuition?
-- How do you resolve the tensions?
-- What is the answer that feels both correct AND right?
-
-Also identify:
-- What NEW QUESTIONS emerged from this process?
-- What remains genuinely UNRESOLVED?
-
-Format your response as:
-FINAL ANSWER: [Your synthesized answer]
-NEW QUESTIONS: [Questions that emerged]
-UNRESOLVED: [What couldn't be resolved]
-CIRCULATION NEEDED: [yes/no - does this need another pass through the vortex?]"""
-
-    results['nodes']['n7_vortex_core'] = node_call('7-VORTEX-CORE', node7_prompt, 0.5)
-    results['final'] = results['nodes']['n7_vortex_core']
+Format:
+FINAL ANSWER: [Essential truth]
+NEW QUESTIONS: [What emerged]
+UNRESOLVED: [What couldn't resolve]
+CIRCULATION NEEDED: [yes/no]""".format(convergence=results['nodes']['n6']),
+        input_data=results['nodes']['n6']
+    )
+    results['nodes']['n7'] = node_call('7-VORTEX-CORE', node7_prompt, 0.5)
+    results['final'] = results['nodes']['n7']
 
     return results
 
 def chestahedron_full(input_query, max_circulations=2, verbose=True):
     """
-    Full chestahedron processing with circulation.
-    Information can loop back through the vortex for deeper processing.
+    Full chestahedron processing with geometric circulation.
+    Blood returns changed - each pass goes deeper.
     """
     print(f"\n   🔷 CHESTAHEDRON VORTEX ACTIVATED")
-    print(f"   Processing: {input_query[:80]}...")
+    print(f"   Geometry: 4 triangles, 3 quadrilaterals, 36° base angle")
+    print(f"   Processing: {input_query[:60]}...")
     print()
 
     current_input = input_query
@@ -318,45 +397,40 @@ def chestahedron_full(input_query, max_circulations=2, verbose=True):
 
     while circulation < max_circulations:
         circulation += 1
-        if verbose: print(f"   ═══ Circulation {circulation}/{max_circulations} ═══")
+        if verbose:
+            print(f"   ═══ Circulation {circulation}/{max_circulations} ═══")
+            if circulation > 1:
+                print(f"   ↻ Blood returns transformed...")
 
-        result = chestahedron_process(current_input, verbose)
+        # Transform input for subsequent circulations
+        processed_input = circulation_transform(
+            input_query,
+            all_results[-1]['final'] if all_results else "",
+            circulation
+        )
+
+        result = chestahedron_process(processed_input, circulation, verbose)
         all_results.append(result)
 
         final_output = result['final'].lower()
 
-        # Check if circulation is needed
         if 'circulation needed: no' in final_output or 'circulation needed: false' in final_output:
             if verbose: print(f"   ✓ Vortex complete after {circulation} circulation(s)")
             break
 
-        # Extract unresolved for next circulation
         if circulation < max_circulations:
-            # Find NEW QUESTIONS or UNRESOLVED sections
-            unresolved = ""
-            if 'new questions:' in final_output:
-                idx = final_output.find('new questions:')
-                unresolved = result['final'][idx:]
-            elif 'unresolved:' in final_output:
-                idx = final_output.find('unresolved:')
-                unresolved = result['final'][idx:]
-
-            if unresolved and len(unresolved) > 20:
-                current_input = f"Previous analysis raised these questions: {unresolved}\n\nOriginal query: {input_query}"
-                if verbose: print(f"   ↻ Circulating with new questions...")
+            if 'new questions:' in final_output or 'unresolved:' in final_output:
+                if verbose: print(f"   ↻ Unresolved items found, circulating deeper...")
             else:
-                if verbose: print(f"   ✓ No significant unresolved items, ending circulation")
+                if verbose: print(f"   ✓ No significant unresolved, ending")
                 break
 
-    # Compile final result
-    final_result = {
+    return {
         'circulations': circulation,
         'final_answer': all_results[-1]['final'],
         'all_nodes': all_results[-1]['nodes'],
         'history': all_results if len(all_results) > 1 else None
     }
-
-    return final_result
 
 def extract_final_answer(result):
     """Extract just the FINAL ANSWER portion from vortex output"""
