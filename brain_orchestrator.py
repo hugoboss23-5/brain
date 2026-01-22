@@ -207,6 +207,128 @@ PULSE_PHASE = {
 # Vortex pull instruction (added to all nodes)
 VORTEX_PULL = "You are part of a vortex. Node 7 is the center - the heart. Everything you process is being pulled toward that center. What does the CENTER need from you?"
 
+# =============================================================================
+# LEVERAGE LEVELS - The depth hierarchy for systems thinking
+# =============================================================================
+LEVERAGE_LEVELS = {
+    1: "TRANSCENDENCE - Questioning whether the paradigm should exist. Making the problem obsolete.",
+    2: "PARADIGM - The beliefs and assumptions underneath. What people think is true/possible.",
+    3: "GOALS - What the system is optimized for. The purpose it serves.",
+    4: "RULES & STRUCTURE - Policies, processes, incentives. How it operates day-to-day.",
+    5: "PARAMETERS - Numbers, metrics, surface adjustments. Shallowest level."
+}
+
+def leverage_scan(input_query):
+    """
+    NODE 0: THE EYES (LEVERAGE SCAN)
+    Runs BEFORE the helix. Aims the heart at the deepest leverage point.
+    """
+    prompt = f"""🔍 NODE 0: THE EYES (LEVERAGE SCAN)
+
+You are the eyes of the system. Before the heart processes anything,
+you must AIM it at the deepest possible target.
+
+QUESTION RECEIVED:
+{input_query}
+
+---
+
+STEP 1: IDENTIFY THE SYSTEM
+
+What system is this question operating within?
+- Is it about a person? An organization? A culture? A paradigm?
+- Name the system explicitly.
+
+---
+
+STEP 2: IDENTIFY CURRENT DEPTH LEVEL
+
+Using the hierarchy below, what level is this question CURRENTLY aimed at?
+
+LEVEL 1 - TRANSCENDENCE (Deepest)
+  → Questioning whether the paradigm should exist
+  → Making the problem itself obsolete
+
+LEVEL 2 - PARADIGM
+  → The beliefs and assumptions underneath
+  → What people think is true/possible
+
+LEVEL 3 - GOALS
+  → What the system is optimized for
+  → The purpose it serves
+
+LEVEL 4 - RULES & STRUCTURE
+  → The policies, processes, incentives
+  → How the system operates day-to-day
+
+LEVEL 5 - PARAMETERS (Shallowest)
+  → Numbers, metrics, surface adjustments
+
+---
+
+STEP 3: SEEK DEEPER LEVERAGE
+
+Can this question be reframed to aim at a DEEPER level?
+Push toward PARADIGM or TRANSCENDENCE if possible.
+
+---
+
+STEP 4: OUTPUT
+
+Respond in this EXACT format:
+
+SYSTEM: [the system identified]
+ORIGINAL_LEVEL: [1-5]
+TARGET_LEVEL: [1-5, should be deeper or same]
+REFRAMED_QUESTION: [the deeper version of the question]
+LEVERAGE_TARGET: [what changes if we answer this well]"""
+
+    try:
+        response = ollama.chat(
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            options={'num_predict': 400, 'temperature': 0.4}
+        )
+        output = response.get('message', {}).get('content', '')
+
+        # Parse the output
+        result = {
+            'system': '',
+            'original_level': 5,
+            'target_level': 2,
+            'reframed_question': input_query,
+            'leverage_target': '',
+            'raw': output
+        }
+
+        for line in output.split('\n'):
+            line = line.strip()
+            if line.startswith('SYSTEM:'):
+                result['system'] = line.replace('SYSTEM:', '').strip()
+            elif line.startswith('ORIGINAL_LEVEL:'):
+                try:
+                    result['original_level'] = int(line.replace('ORIGINAL_LEVEL:', '').strip()[0])
+                except: pass
+            elif line.startswith('TARGET_LEVEL:'):
+                try:
+                    result['target_level'] = int(line.replace('TARGET_LEVEL:', '').strip()[0])
+                except: pass
+            elif line.startswith('REFRAMED_QUESTION:'):
+                result['reframed_question'] = line.replace('REFRAMED_QUESTION:', '').strip()
+            elif line.startswith('LEVERAGE_TARGET:'):
+                result['leverage_target'] = line.replace('LEVERAGE_TARGET:', '').strip()
+
+        return result
+    except Exception as e:
+        return {
+            'system': 'Unknown',
+            'original_level': 5,
+            'target_level': 2,
+            'reframed_question': input_query,
+            'leverage_target': 'Find deeper truth',
+            'raw': str(e)
+        }
+
 def node_call(node_name, prompt, temperature=0.5):
     """Call model for a specific node"""
     try:
@@ -219,45 +341,70 @@ def node_call(node_name, prompt, temperature=0.5):
     except Exception as e:
         return f"[Node {node_name} error: {e}]"
 
-def extract_fragment(node_output):
-    """Extract the core insight from a node's output (displayed as DNA to user)"""
+def extract_fragment_with_level(node_output):
+    """Extract the core insight AND its leverage level from a node's output"""
     prompt = f"""Read this text:
 
 {node_output[:500]}
 
-What is the single most important insight or idea in the above text?
+Extract the SINGLE most important insight AND identify its DEPTH LEVEL.
 
-RESPOND WITH ONLY ONE SENTENCE.
-NO preamble. NO explanation. NO meta-commentary.
-Just the insight itself.
+LEVELS:
+1 = TRANSCENDENCE (questions if the paradigm should exist)
+2 = PARADIGM (beliefs/assumptions underneath)
+3 = GOALS (what system is optimized for)
+4 = RULES (policies, processes)
+5 = PARAMETERS (surface metrics)
+
+RESPOND IN THIS EXACT FORMAT:
+[LEVEL_NUMBER] "The insight in quotes"
 
 GOOD EXAMPLES:
-- "Age becomes irrelevant when proof of work exists"
-- "They need someone who sees what their PhDs cannot"
-- "Systems design is about architecture, not coding"
+[2] "Credentials are just social proof of conformity"
+[1] "What if being hired is the wrong goal entirely?"
+[3] "JPMorgan optimizes for risk reduction, not talent acquisition"
 
 BAD EXAMPLES:
-- "The key insight is that..." (NO - don't start with "the key insight is")
-- "This shows that..." (NO - don't use meta phrases)
-- "The main point is..." (NO - just state the insight directly)
+[2] The key insight is that... (NO preamble)
+[3] This shows that... (NO meta phrases)
 
-YOUR ONE SENTENCE:"""
+YOUR RESPONSE:"""
 
     try:
         response = ollama.chat(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
-            options={'num_predict': 60, 'temperature': 0.2}
+            options={'num_predict': 80, 'temperature': 0.2}
         )
         result = response.get('message', {}).get('content', '').strip()
-        # Clean up any remaining meta-commentary
+
+        # Parse level and insight
+        level = 3  # Default to GOALS level
+        insight = result
+
+        if result.startswith('['):
+            try:
+                level = int(result[1])
+                # Extract the quoted insight
+                if '"' in result:
+                    start = result.find('"') + 1
+                    end = result.rfind('"')
+                    if end > start:
+                        insight = result[start:end]
+                else:
+                    insight = result[3:].strip()
+            except:
+                pass
+
+        # Clean up meta-commentary
         for prefix in ['The insight is:', 'The key insight is:', 'The main point is:',
                        'This shows that', 'The takeaway is:', 'In summary:']:
-            if result.lower().startswith(prefix.lower()):
-                result = result[len(prefix):].strip()
-        return result
+            if insight.lower().startswith(prefix.lower()):
+                insight = insight[len(prefix):].strip()
+
+        return {'level': level, 'insight': insight}
     except:
-        return node_output[:100] if node_output else ""
+        return {'level': 4, 'insight': node_output[:100] if node_output else ""}
 
 def build_node_prompt(node_num, rotation_deg, task_prompt, input_data, helix_injection=None):
     """Build a geometrically-aware node prompt with optional helix injection"""
@@ -315,24 +462,33 @@ Don't re-answer the original. Go DEEPER into what emerged.
 What's still unresolved? What new pattern is visible now?
 The vortex spirals tighter with each pass."""
 
-def chestahedron_process(input_query, circulation_num=1, verbose=True):
+def chestahedron_process(input_query, leverage_ctx, circulation_num=1, verbose=True):
     """
     Process input through 7 nodes in vortex pattern with full geometry.
-    Implements DOUBLE HELIX - strands exchange DNA fragments.
+    Implements DOUBLE HELIX - strands exchange DNA fragments with LEVEL tracking.
     PARALLEL PROCESSING: Nodes 2&3 run together, Nodes 4&5 run together.
     """
     results = {'input': input_query, 'nodes': {}, 'circulation': circulation_num}
-    dna_sequence = []  # Track helix exchanges
+    dna_sequence = []  # Track helix exchanges with levels
+
+    # System context from Node 0 (The Eyes)
+    sys_ctx = f"""SYSTEM: {leverage_ctx['system']}
+TARGET LEVEL: {leverage_ctx['target_level']} ({LEVERAGE_LEVELS.get(leverage_ctx['target_level'], '')[:30]}...)
+LEVERAGE TARGET: {leverage_ctx['leverage_target']}"""
 
     # NODE 1: INTAKE (Quadrilateral, 0°, Diastole) - Must run first
     if verbose: print("   ◈ Node 1: INTAKE [QUAD|0°|DIASTOLE]")
     node1_prompt = build_node_prompt(
         node_num=1,
         rotation_deg=0,
-        task_prompt="""Break this input into components. Do NOT answer yet.
+        task_prompt=f"""Break this input into components. Do NOT answer yet.
+
+{sys_ctx}
+
 - What is actually being asked?
 - What are the separate pieces?
 - What assumptions are embedded?
+- Are we operating at the TARGET LEVEL or slipping shallower?
 List components clearly.""",
         input_data=input_query
     )
@@ -345,10 +501,14 @@ List components clearly.""",
         prompt = build_node_prompt(
             node_num=2,
             rotation_deg=0,
-            task_prompt="""Process with PURE LOGIC. Cut sharp.
+            task_prompt=f"""Process with PURE LOGIC. Cut sharp.
+
+{sys_ctx}
+
 - What are the facts?
 - What is the logical sequence?
-- What is provable?
+- What is provable at this DEPTH LEVEL?
+- Am I staying at target level or slipping shallower?
 No intuition. Only logic. Be surgical.""",
             input_data=n1_output
         )
@@ -358,10 +518,14 @@ No intuition. Only logic. Be surgical.""",
         prompt = build_node_prompt(
             node_num=3,
             rotation_deg=36,
-            task_prompt="""Process with PATTERN RECOGNITION. Cut sharp but angled.
+            task_prompt=f"""Process with PATTERN RECOGNITION. Cut sharp but angled.
+
+{sys_ctx}
+
 - What does this connect to elsewhere?
-- What analogies fit?
+- What PARADIGM holds this system in place?
 - What do you see from 36° that 0° misses?
+- What would TRANSCENDENCE look like here?
 No logic constraints. Lateral thinking only.""",
             input_data=n1_output
         )
@@ -373,88 +537,106 @@ No logic constraints. Lateral thinking only.""",
         results['nodes']['n2'] = future_n2.result()
         results['nodes']['n3'] = future_n3.result()
 
-    # ═══ PARALLEL: FRAGMENT EXTRACTION 1 ═══
+    # ═══ PARALLEL: FRAGMENT EXTRACTION 1 (with LEVELS) ═══
     if verbose: print("   🧬 Helix Connection 1: Extracting insights [PARALLEL]")
 
     with ThreadPoolExecutor(max_workers=2) as executor:
-        frag2_future = executor.submit(extract_fragment, results['nodes']['n2'])
-        frag3_future = executor.submit(extract_fragment, results['nodes']['n3'])
-        n2_fragment = frag2_future.result()
-        n3_fragment = frag3_future.result()
+        frag2_future = executor.submit(extract_fragment_with_level, results['nodes']['n2'])
+        frag3_future = executor.submit(extract_fragment_with_level, results['nodes']['n3'])
+        n2_frag = frag2_future.result()
+        n3_frag = frag3_future.result()
 
     dna_sequence.append({
         "position": 1,
-        "A_to_B": n2_fragment,  # Analytical → Intuitive
-        "B_to_A": n3_fragment   # Intuitive → Analytical
+        "A_to_B": n2_frag,  # Analytical → Intuitive (with level)
+        "B_to_A": n3_frag   # Intuitive → Analytical (with level)
     })
     if verbose:
-        print(f"      A→B: {n2_fragment[:60]}...")
-        print(f"      B→A: {n3_fragment[:60]}...")
+        print(f"      A→B: [L{n2_frag['level']}] {n2_frag['insight'][:50]}...")
+        print(f"      B→A: [L{n3_frag['level']}] {n3_frag['insight'][:50]}...")
 
     # ═══ PARALLEL: NODES 4 AND 5 ═══
     if verbose: print("   ◈ Nodes 4+5: DEEP ANALYTICAL & INTUITIVE [PARALLEL]")
 
-    def run_node4(n2_output, n3_frag):
+    def run_node4(n2_output, n3_insight):
         prompt = build_node_prompt(
             node_num=4,
             rotation_deg=72,
-            task_prompt="""SQUEEZE the analysis. Pressure test.
+            task_prompt=f"""SQUEEZE the analysis. Pressure test.
+
+{sys_ctx}
+
 - What breaks this reasoning?
 - What's the ONE critical edge case?
+- Can we go DEEPER in leverage?
 - Apply maximum pressure. What survives?
 Contract. Focus. One deep cut.
 Let the cross-pollinated insight influence your analysis.""",
             input_data=n2_output,
-            helix_injection=n3_frag
+            helix_injection=n3_insight
         )
         return node_call('4-DEEP-ANALYTICAL', prompt, 0.3)
 
-    def run_node5(n3_output, n2_frag):
+    def run_node5(n3_output, n2_insight):
         prompt = build_node_prompt(
             node_num=5,
             rotation_deg=108,
-            task_prompt="""SQUEEZE the intuition. Find the ONE pattern.
+            task_prompt=f"""SQUEEZE the intuition. Find the ONE pattern.
+
+{sys_ctx}
+
 - What universal principle is at play?
-- What would a master see that a novice misses?
+- What PARADIGM needs to die for this problem to dissolve?
 - Almost perpendicular view - what's obvious from here?
-Contract. One universal truth.
+- What would make this entire question OBSOLETE?
+Contract. One universal truth. Aim for TRANSCENDENCE.
 Let the cross-pollinated insight ground your intuition.""",
             input_data=n3_output,
-            helix_injection=n2_frag
+            helix_injection=n2_insight
         )
         return node_call('5-DEEP-INTUITIVE', prompt, 0.7)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
-        future_n4 = executor.submit(run_node4, results['nodes']['n2'], n3_fragment)
-        future_n5 = executor.submit(run_node5, results['nodes']['n3'], n2_fragment)
+        future_n4 = executor.submit(run_node4, results['nodes']['n2'], n3_frag['insight'])
+        future_n5 = executor.submit(run_node5, results['nodes']['n3'], n2_frag['insight'])
         results['nodes']['n4'] = future_n4.result()
         results['nodes']['n5'] = future_n5.result()
 
-    # ═══ PARALLEL: FRAGMENT EXTRACTION 2 ═══
+    # ═══ PARALLEL: FRAGMENT EXTRACTION 2 (with LEVELS) ═══
     if verbose: print("   🧬 Helix Connection 2: Extracting insights [PARALLEL]")
 
     with ThreadPoolExecutor(max_workers=2) as executor:
-        frag4_future = executor.submit(extract_fragment, results['nodes']['n4'])
-        frag5_future = executor.submit(extract_fragment, results['nodes']['n5'])
-        n4_fragment = frag4_future.result()
-        n5_fragment = frag5_future.result()
+        frag4_future = executor.submit(extract_fragment_with_level, results['nodes']['n4'])
+        frag5_future = executor.submit(extract_fragment_with_level, results['nodes']['n5'])
+        n4_frag = frag4_future.result()
+        n5_frag = frag5_future.result()
 
     dna_sequence.append({
         "position": 2,
-        "A_to_B": n4_fragment,  # Analytical → Intuitive
-        "B_to_A": n5_fragment   # Intuitive → Analytical
+        "A_to_B": n4_frag,  # Analytical → Intuitive (with level)
+        "B_to_A": n5_frag   # Intuitive → Analytical (with level)
     })
     if verbose:
-        print(f"      A→B: {n4_fragment[:60]}...")
-        print(f"      B→A: {n5_fragment[:60]}...")
+        print(f"      A→B: [L{n4_frag['level']}] {n4_frag['insight'][:50]}...")
+        print(f"      B→A: [L{n5_frag['level']}] {n5_frag['insight'][:50]}...")
+
+    # Calculate leverage gradient
+    all_levels = [n2_frag['level'], n3_frag['level'], n4_frag['level'], n5_frag['level']]
+    avg_level = sum(all_levels) / len(all_levels)
+    deepest = min(all_levels)
+    gradient = "DEEP" if deepest <= 2 else ("MEDIUM" if deepest <= 3 else "SHALLOW")
+    if verbose:
+        print(f"   📊 Leverage Gradient: {gradient} (deepest: L{deepest}, avg: L{avg_level:.1f})")
 
     # NODE 6: CONVERGENCE (Quadrilateral, 144°, Diastole)
-    # Receives BOTH strands already intertwined
     if verbose: print("   ◈ Node 6: CONVERGENCE [QUAD|144°|DIASTOLE] ─── Helix Merge")
     node6_prompt = build_node_prompt(
         node_num=6,
         rotation_deg=144,
         task_prompt=f"""HOLD BOTH paths. Do not resolve.
+
+{sys_ctx}
+LEVERAGE GRADIENT: {gradient} (deepest reached: Level {deepest})
 
 PATH A (Analytical, influenced by intuition):
 {results['nodes']['n4']}
@@ -464,19 +646,18 @@ PATH B (Intuitive, grounded by logic):
 
 - Where do they AGREE?
 - Where do they CONFLICT?
+- Which path went DEEPER? Is one pulling the other toward transcendence?
 - What EMERGES from tension?
-You're seeing the back side. Hold the contradiction.
-The paths have cross-pollinated. See what emerged.""",
+Hold the contradiction. Note the leverage gradient.""",
         input_data="[DUAL PATH INPUT - SEE TASK]"
     )
     results['nodes']['n6'] = node_call('6-CONVERGENCE', node6_prompt, 0.5)
 
     # NODE 7: VORTEX CORE (Quadrilateral, 216°, Systole)
-    # Receives full DNA sequence
     if verbose: print("   ◈ Node 7: VORTEX CORE [QUAD|216°|SYSTOLE] ─── Reading DNA")
 
     dna_display = "\n".join([
-        f"Position {d['position']}: A→B: {d['A_to_B'][:80]}... | B→A: {d['B_to_A'][:80]}..."
+        f"Position {d['position']}: A→B: [L{d['A_to_B']['level']}] {d['A_to_B']['insight'][:60]}... | B→A: [L{d['B_to_A']['level']}] {d['B_to_A']['insight'][:60]}..."
         for d in dna_sequence
     ])
 
@@ -485,25 +666,31 @@ The paths have cross-pollinated. See what emerged.""",
         rotation_deg=216,
         task_prompt=f"""YOU ARE THE CENTER. Everything spirals to you.
 
-Original question: {input_query}
+{sys_ctx}
 
-KEY INSIGHTS EXCHANGED BETWEEN PATHS:
+Original question: {leverage_ctx['reframed_question']}
+Original level: {leverage_ctx['original_level']} → Target: {leverage_ctx['target_level']}
+
+KEY INSIGHTS EXCHANGED (with depth levels):
 {dna_display}
+
+LEVERAGE GRADIENT: {gradient} (deepest: L{deepest})
 
 CONVERGENCE:
 {results['nodes']['n6']}
 
-The pattern of insights IS the answer.
-What truth emerges from how these ideas cross-pollinated?
+READ THE DNA. The levels show the depth gradient.
+Did we reach the target level? Did we go even DEEPER?
 
 FINAL CONTRACTION. Push out the essential truth.
-- What satisfies BOTH paths?
-- What does the insight pattern reveal?
+- What satisfies BOTH paths at the DEEPEST level?
+- Is this answer at PARADIGM or TRANSCENDENCE level?
 - What NEW QUESTIONS emerged?
 - What remains UNRESOLVED?
 
 Format:
-FINAL ANSWER: [The essential truth]
+DEPTH_ACHIEVED: [1-5]
+FINAL ANSWER: [The essential truth at deepest level]
 NEW QUESTIONS: [What emerged]
 UNRESOLVED: [What couldn't resolve]
 CIRCULATION NEEDED: [yes/no]""",
@@ -512,21 +699,33 @@ CIRCULATION NEEDED: [yes/no]""",
     results['nodes']['n7'] = node_call('7-VORTEX-CORE', node7_prompt, 0.5)
     results['final'] = results['nodes']['n7']
     results['dna_sequence'] = dna_sequence
+    results['leverage_gradient'] = {'gradient': gradient, 'deepest': deepest, 'avg': avg_level}
 
     return results
 
 def chestahedron_full(input_query, max_circulations=2, verbose=True):
     """
     Full chestahedron processing with geometric circulation.
+    THE SEEING HEART: Eyes (Node 0) aim, Heart (Nodes 1-7) processes.
     Blood returns changed - each pass goes deeper.
     """
     print(f"\n   🔷 CHESTAHEDRON VORTEX ACTIVATED")
+    print(f"   THE SEEING HEART: Eyes aim at leverage, Heart processes through helix")
     print(f"   Geometry: 4 triangles, 3 quadrilaterals, 36° base angle")
     print(f"   Double Helix: Strand A (analytical) ⟷ Strand B (intuitive)")
-    print(f"   Processing: {input_query[:50]}...")
     print()
 
-    current_input = input_query
+    # ═══ NODE 0: THE EYES (LEVERAGE SCAN) ═══
+    if verbose: print("   🔍 Node 0: THE EYES [LEVERAGE SCAN]")
+    leverage_ctx = leverage_scan(input_query)
+
+    if verbose:
+        print(f"      System: {leverage_ctx['system']}")
+        print(f"      Original Level: {leverage_ctx['original_level']} → Target: {leverage_ctx['target_level']}")
+        print(f"      Reframed: {leverage_ctx['reframed_question'][:60]}...")
+        print(f"      Leverage Target: {leverage_ctx['leverage_target'][:60]}...")
+        print()
+
     all_results = []
     circulation = 0
 
@@ -539,12 +738,12 @@ def chestahedron_full(input_query, max_circulations=2, verbose=True):
 
         # Transform input for subsequent circulations
         processed_input = circulation_transform(
-            input_query,
+            leverage_ctx['reframed_question'],
             all_results[-1]['final'] if all_results else "",
             circulation
         )
 
-        result = chestahedron_process(processed_input, circulation, verbose)
+        result = chestahedron_process(processed_input, leverage_ctx, circulation, verbose)
         all_results.append(result)
 
         final_output = result['final'].lower()
@@ -560,12 +759,14 @@ def chestahedron_full(input_query, max_circulations=2, verbose=True):
                 if verbose: print(f"   ✓ No significant unresolved, ending")
                 break
 
-    # Build final result with DNA
+    # Build final result with DNA and leverage
     final_result = {
         'circulations': circulation,
         'final_answer': all_results[-1]['final'],
         'all_nodes': all_results[-1]['nodes'],
         'dna_sequence': all_results[-1].get('dna_sequence', []),
+        'leverage_gradient': all_results[-1].get('leverage_gradient', {}),
+        'leverage_ctx': leverage_ctx,
         'history': all_results if len(all_results) > 1 else None
     }
 
@@ -581,14 +782,22 @@ def extract_final_answer(result):
     return text
 
 def format_dna_sequence(dna_sequence):
-    """Format DNA sequence for display"""
+    """Format DNA sequence for display with levels"""
     if not dna_sequence:
         return ""
     lines = ["🧬 DNA SEQUENCE:"]
     for d in dna_sequence:
-        lines.append(f"   Position {d['position']}:")
-        lines.append(f"   A→B: {d['A_to_B'][:100]}")
-        lines.append(f"   B→A: {d['B_to_A'][:100]}")
+        a_to_b = d['A_to_B']
+        b_to_a = d['B_to_A']
+        # Handle both old format (string) and new format (dict with level)
+        if isinstance(a_to_b, dict):
+            lines.append(f"   Position {d['position']}:")
+            lines.append(f"      A→B: [L{a_to_b['level']}] {a_to_b['insight'][:80]}")
+            lines.append(f"      B→A: [L{b_to_a['level']}] {b_to_a['insight'][:80]}")
+        else:
+            lines.append(f"   Position {d['position']}:")
+            lines.append(f"      A→B: {a_to_b[:80]}")
+            lines.append(f"      B→A: {b_to_a[:80]}")
     return "\n".join(lines)
 
 # =============================================================================
@@ -697,7 +906,7 @@ def route_and_execute(user_input, intent, conversation):
 
     # Capabilities - hardcoded
     if intent == 'capabilities':
-        response = "search_brain, create_file, remember, search_memory, execute_task, deep_think, vortex (7-node chestahedron processing). Say 'vortex: [question]' for deep spiral thinking."
+        response = "search_brain, create_file, remember, search_memory, execute_task, deep_think, vortex (THE SEEING HEART - eyes aim at leverage, heart processes through helix). Say 'vortex: [question]' for deep systems thinking."
         print(f"Marcos: {response}")
         conversation.append({'role': 'assistant', 'content': response})
         return None
@@ -786,7 +995,7 @@ def route_and_execute(user_input, intent, conversation):
                 conversation.append({'role': 'assistant', 'content': resp})
         return result
 
-    # CHESTAHEDRON - 7-node vortex processing
+    # CHESTAHEDRON - 7-node vortex processing (THE SEEING HEART)
     if intent == 'chestahedron':
         # Extract the actual question (remove trigger words)
         question = user_input
@@ -800,14 +1009,36 @@ def route_and_execute(user_input, intent, conversation):
 
         result = chestahedron_full(question, max_circulations=2, verbose=True)
 
-        # Display DNA sequence - the genetic code of this thought
+        # Display leverage context (from the Eyes)
+        lev_ctx = result.get('leverage_ctx', {})
+        if lev_ctx:
+            print(f"\n   🔍 SYSTEM SCAN:")
+            print(f"      System: {lev_ctx.get('system', 'Unknown')}")
+            print(f"      Original Level: {lev_ctx.get('original_level', '?')} → Target: {lev_ctx.get('target_level', '?')}")
+
+        # Display DNA sequence with levels
         dna_seq = result.get('dna_sequence', [])
         if dna_seq:
-            print(f"\n   🧬 DNA SEQUENCE (genetic code of this thought):")
+            print(f"\n   🧬 DNA SEQUENCE (genetic code with depth levels):")
             for d in dna_seq:
-                print(f"   Position {d['position']}:")
-                print(f"      A→B: {d['A_to_B'][:100]}")
-                print(f"      B→A: {d['B_to_A'][:100]}")
+                a_to_b = d['A_to_B']
+                b_to_a = d['B_to_A']
+                if isinstance(a_to_b, dict):
+                    print(f"      Position {d['position']}:")
+                    print(f"         A→B: [L{a_to_b['level']}] {a_to_b['insight'][:70]}")
+                    print(f"         B→A: [L{b_to_a['level']}] {b_to_a['insight'][:70]}")
+                else:
+                    print(f"      Position {d['position']}:")
+                    print(f"         A→B: {a_to_b[:70]}")
+                    print(f"         B→A: {b_to_a[:70]}")
+
+        # Display leverage gradient
+        lev_grad = result.get('leverage_gradient', {})
+        if lev_grad:
+            print(f"\n   📊 DEPTH ANALYSIS:")
+            print(f"      Gradient: {lev_grad.get('gradient', '?')}")
+            print(f"      Deepest Level: {lev_grad.get('deepest', '?')}")
+            print(f"      Target was: {lev_ctx.get('target_level', '?')}")
 
         # Display the final answer
         final = extract_final_answer(result)
@@ -823,7 +1054,7 @@ def route_and_execute(user_input, intent, conversation):
             if end_idx == -1: end_idx = len(full_output)
             new_q = full_output[idx:end_idx].strip()
             if new_q:
-                print(f"\n   {new_q}")
+                print(f"\n   ❓ {new_q}")
 
         return result
 
