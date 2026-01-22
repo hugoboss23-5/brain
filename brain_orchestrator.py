@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.getcwd())
 from system.recursive_memory import get_memory
@@ -318,11 +319,12 @@ def chestahedron_process(input_query, circulation_num=1, verbose=True):
     """
     Process input through 7 nodes in vortex pattern with full geometry.
     Implements DOUBLE HELIX - strands exchange DNA fragments.
+    PARALLEL PROCESSING: Nodes 2&3 run together, Nodes 4&5 run together.
     """
     results = {'input': input_query, 'nodes': {}, 'circulation': circulation_num}
     dna_sequence = []  # Track helix exchanges
 
-    # NODE 1: INTAKE (Quadrilateral, 0°, Diastole)
+    # NODE 1: INTAKE (Quadrilateral, 0°, Diastole) - Must run first
     if verbose: print("   ◈ Node 1: INTAKE [QUAD|0°|DIASTOLE]")
     node1_prompt = build_node_prompt(
         node_num=1,
@@ -336,41 +338,50 @@ List components clearly.""",
     )
     results['nodes']['n1'] = node_call('1-INTAKE', node1_prompt, 0.3)
 
-    # ═══ STRAND A: ANALYTICAL PATH ═══
-    # NODE 2: ANALYTICAL (Triangle, 0°, Diastole)
-    if verbose: print("   ◈ Node 2: ANALYTICAL [TRI|0°|DIASTOLE] ─── Strand A")
-    node2_prompt = build_node_prompt(
-        node_num=2,
-        rotation_deg=0,
-        task_prompt="""Process with PURE LOGIC. Cut sharp.
+    # ═══ PARALLEL: NODES 2 AND 3 ═══
+    if verbose: print("   ◈ Nodes 2+3: ANALYTICAL & INTUITIVE [PARALLEL]")
+
+    def run_node2(n1_output):
+        prompt = build_node_prompt(
+            node_num=2,
+            rotation_deg=0,
+            task_prompt="""Process with PURE LOGIC. Cut sharp.
 - What are the facts?
 - What is the logical sequence?
 - What is provable?
 No intuition. Only logic. Be surgical.""",
-        input_data=results['nodes']['n1']
-    )
-    results['nodes']['n2'] = node_call('2-ANALYTICAL', node2_prompt, 0.3)
+            input_data=n1_output
+        )
+        return node_call('2-ANALYTICAL', prompt, 0.3)
 
-    # ═══ STRAND B: INTUITIVE PATH ═══
-    # NODE 3: INTUITIVE (Triangle, 36°, Diastole) - THE KEY ANGLE
-    if verbose: print("   ◈ Node 3: INTUITIVE [TRI|36°|DIASTOLE] ─── Strand B")
-    node3_prompt = build_node_prompt(
-        node_num=3,
-        rotation_deg=36,
-        task_prompt="""Process with PATTERN RECOGNITION. Cut sharp but angled.
+    def run_node3(n1_output):
+        prompt = build_node_prompt(
+            node_num=3,
+            rotation_deg=36,
+            task_prompt="""Process with PATTERN RECOGNITION. Cut sharp but angled.
 - What does this connect to elsewhere?
 - What analogies fit?
 - What do you see from 36° that 0° misses?
 No logic constraints. Lateral thinking only.""",
-        input_data=results['nodes']['n1']
-    )
-    results['nodes']['n3'] = node_call('3-INTUITIVE', node3_prompt, 0.7)
+            input_data=n1_output
+        )
+        return node_call('3-INTUITIVE', prompt, 0.7)
 
-    # ═══ HELIX CONNECTION POINT 1 ═══
-    # Extract fragments and cross them
-    if verbose: print("   🧬 Helix Connection 1: Extracting DNA fragments...")
-    n2_fragment = extract_fragment(results['nodes']['n2'])
-    n3_fragment = extract_fragment(results['nodes']['n3'])
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_n2 = executor.submit(run_node2, results['nodes']['n1'])
+        future_n3 = executor.submit(run_node3, results['nodes']['n1'])
+        results['nodes']['n2'] = future_n2.result()
+        results['nodes']['n3'] = future_n3.result()
+
+    # ═══ PARALLEL: FRAGMENT EXTRACTION 1 ═══
+    if verbose: print("   🧬 Helix Connection 1: Extracting insights [PARALLEL]")
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        frag2_future = executor.submit(extract_fragment, results['nodes']['n2'])
+        frag3_future = executor.submit(extract_fragment, results['nodes']['n3'])
+        n2_fragment = frag2_future.result()
+        n3_fragment = frag3_future.result()
+
     dna_sequence.append({
         "position": 1,
         "A_to_B": n2_fragment,  # Analytical → Intuitive
@@ -380,44 +391,54 @@ No logic constraints. Lateral thinking only.""",
         print(f"      A→B: {n2_fragment[:60]}...")
         print(f"      B→A: {n3_fragment[:60]}...")
 
-    # NODE 4: ANALYTICAL DEEPENING (Triangle, 72°, Systole)
-    # Receives Node 3's fragment (helix injection)
-    if verbose: print("   ◈ Node 4: DEEP ANALYTICAL [TRI|72°|SYSTOLE] + B DNA")
-    node4_prompt = build_node_prompt(
-        node_num=4,
-        rotation_deg=72,
-        task_prompt="""SQUEEZE the analysis. Pressure test.
+    # ═══ PARALLEL: NODES 4 AND 5 ═══
+    if verbose: print("   ◈ Nodes 4+5: DEEP ANALYTICAL & INTUITIVE [PARALLEL]")
+
+    def run_node4(n2_output, n3_frag):
+        prompt = build_node_prompt(
+            node_num=4,
+            rotation_deg=72,
+            task_prompt="""SQUEEZE the analysis. Pressure test.
 - What breaks this reasoning?
 - What's the ONE critical edge case?
 - Apply maximum pressure. What survives?
 Contract. Focus. One deep cut.
-Let the intuitive DNA influence your analysis.""",
-        input_data=results['nodes']['n2'],
-        helix_injection=n3_fragment
-    )
-    results['nodes']['n4'] = node_call('4-DEEP-ANALYTICAL', node4_prompt, 0.3)
+Let the cross-pollinated insight influence your analysis.""",
+            input_data=n2_output,
+            helix_injection=n3_frag
+        )
+        return node_call('4-DEEP-ANALYTICAL', prompt, 0.3)
 
-    # NODE 5: INTUITIVE DEEPENING (Triangle, 108°, Systole)
-    # Receives Node 2's fragment (helix injection)
-    if verbose: print("   ◈ Node 5: DEEP INTUITIVE [TRI|108°|SYSTOLE] + A DNA")
-    node5_prompt = build_node_prompt(
-        node_num=5,
-        rotation_deg=108,
-        task_prompt="""SQUEEZE the intuition. Find the ONE pattern.
+    def run_node5(n3_output, n2_frag):
+        prompt = build_node_prompt(
+            node_num=5,
+            rotation_deg=108,
+            task_prompt="""SQUEEZE the intuition. Find the ONE pattern.
 - What universal principle is at play?
 - What would a master see that a novice misses?
 - Almost perpendicular view - what's obvious from here?
 Contract. One universal truth.
-Let the analytical DNA ground your intuition.""",
-        input_data=results['nodes']['n3'],
-        helix_injection=n2_fragment
-    )
-    results['nodes']['n5'] = node_call('5-DEEP-INTUITIVE', node5_prompt, 0.7)
+Let the cross-pollinated insight ground your intuition.""",
+            input_data=n3_output,
+            helix_injection=n2_frag
+        )
+        return node_call('5-DEEP-INTUITIVE', prompt, 0.7)
 
-    # ═══ HELIX CONNECTION POINT 2 ═══
-    if verbose: print("   🧬 Helix Connection 2: Extracting DNA fragments...")
-    n4_fragment = extract_fragment(results['nodes']['n4'])
-    n5_fragment = extract_fragment(results['nodes']['n5'])
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_n4 = executor.submit(run_node4, results['nodes']['n2'], n3_fragment)
+        future_n5 = executor.submit(run_node5, results['nodes']['n3'], n2_fragment)
+        results['nodes']['n4'] = future_n4.result()
+        results['nodes']['n5'] = future_n5.result()
+
+    # ═══ PARALLEL: FRAGMENT EXTRACTION 2 ═══
+    if verbose: print("   🧬 Helix Connection 2: Extracting insights [PARALLEL]")
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        frag4_future = executor.submit(extract_fragment, results['nodes']['n4'])
+        frag5_future = executor.submit(extract_fragment, results['nodes']['n5'])
+        n4_fragment = frag4_future.result()
+        n5_fragment = frag5_future.result()
+
     dna_sequence.append({
         "position": 2,
         "A_to_B": n4_fragment,  # Analytical → Intuitive
